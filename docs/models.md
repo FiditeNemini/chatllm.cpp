@@ -424,8 +424,9 @@ Please use `--format completion` for these models.
     [8B-Reasoning-2512](https://huggingface.co/mistralai/Ministral-3-8B-Reasoning-2512/tree/f511871f6402ba68dadfb42a94a7a7e13499fd65)
     * [x] Devstral-Small-2: [24B-Instruct-2512](https://huggingface.co/mistralai/Devstral-Small-2-24B-Instruct-2512/tree/8d27a0d2120f1563c11dc91d494e99f9678ecf79)
 
-* Qwen (`Qwen2AudioForConditionalGeneration`, `Qwen2_5_VLForConditionalGeneration`, `Qwen3VLForConditionalGeneration`, `Qwen3VLMoeForConditionalGeneration`)
+* Qwen (`Qwen2AudioForConditionalGeneration`, `Qwen2VLForConditionalGeneration`, `Qwen2_5_VLForConditionalGeneration`, `Qwen3VLForConditionalGeneration`, `Qwen3VLMoeForConditionalGeneration`)
     * [x] Qwen2-Audio: [7B-Instruct](https://huggingface.co/Qwen/Qwen2-Audio-7B-Instruct/tree/0a095220c30b7b31434169c3086508ef3ea5bf0a)
+    * [x] Qwen2-VL: [2B-Instruct](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct/tree/895c3a49bc3fa70a340399125c650a463535e71c), [7B-Instruct](https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct/tree/eed13092ef92e448dd6875b2a00151bd3f7db0ac)
     * [x] Qwen2.5-VL: [3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct/tree/66285546d2b821cf421d4f5eb2576359d3770cd3), [7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct/tree/cc594898137f460bfe9f0759e9844b3ce807cfb5)
     * [x] MiMo-VL: [7B-RL](https://huggingface.co/XiaomiMiMo/MiMo-VL-7B-RL/tree/460c34be0c6cfe79b6b311647ae9112784f80b73), [7B-RL-2508](https://huggingface.co/XiaomiMiMo/MiMo-VL-7B-RL-2508/tree/4bfb270765825d2fa059011deb4c96fdd579be6f)
     * [x] Dolphin: [v2](https://huggingface.co/ByteDance/Dolphin-v2/tree/c37c62768c644bb594da4283149c627765aa80f3)

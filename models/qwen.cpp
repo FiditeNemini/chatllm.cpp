@@ -1,5 +1,6 @@
 #include "qwen.h"
 #include <optional>
+#include <string.h>
 #include "../src/audio_process.h"
 #include "../src/vision_process.h"
 #include "qwen_asr.h"
@@ -900,6 +901,11 @@ namespace chatllm::qwen::ds_r1_distill
 
 namespace chatllm::qwen::vit
 {
+    Config::Config()
+    {
+        memset(this, 0, sizeof(Config));
+    }
+
     PatchEmbedding::PatchEmbedding(InitContext *ctx, const Config &config)
         : proj0(ctx, 3, config.hidden_size, config.patch_size, config.patch_size, 0, 1, 1, false),
           proj1(ctx, 3, config.hidden_size, config.patch_size, config.patch_size, 0, 1, 1, false)
@@ -1366,9 +1372,9 @@ namespace chatllm::qwen::vit
         :
         GRAPH_SIZE(GRAPH_SIZE), _ctx(&backend_context),
         n_threads(runtime_config.n_threads),
+        vis_config(),
         max_patches(max_patches)
     {
-        memset(&vis_config, 0, sizeof(vis_config));
         _ctx.cache_dtype = runtime_config.cache_type;
         model_gpu_layers = BackendContext::get_ngl_of_model(runtime_config.model_gpu_layers, "vis");
     }
@@ -1391,8 +1397,10 @@ namespace chatllm::qwen::vit
         const auto vis_cfg = config["config.json"]["vision_config"];
         if (!vis_cfg.IsObject()) return false;
 
+        int full_cnt = 0;
+
         vis_config.dtype = dtype;
-        vis_config.is_ver_2_0           = vis_cfg["model_type"].ToString() == "qwen2_vl";
+        vis_config.is_ver_2_0           = config["config.json"]["model_type"].ToString() == "qwen2_vl";
 
         vis_config.patch_size           = (int)vis_cfg["patch_size"].ToInt();
         vis_config.num_attention_heads  = (int)vis_cfg["num_heads"].ToInt();
@@ -1420,7 +1428,10 @@ namespace chatllm::qwen::vit
             auto indices = vis_cfg["fullatt_block_indexes"];
             CHATLLM_CHECK((int)indices.length() <= VIT_MAX_LAYERS);
             for (int i = 0; i < (int)indices.length(); i++)
+            {
+                full_cnt += 1;
                 vis_config.fullatt_block_indices[indices[i].ToInt()] = true;
+            }
         }
 
         auto pp_cfg = config["preprocessor_config.json"];
@@ -1446,7 +1457,7 @@ namespace chatllm::qwen::vit
         }
 
         const size_t tensor_ovhd = ggml_tensor_overhead();
-        const size_t num_tensors = vis_config.is_ver_2_0 ? 10 + vis_config.num_hidden_layers * 18 :  5 + vis_config.num_hidden_layers * 18;
+        const size_t num_tensors = vis_config.is_ver_2_0 ? 10 + vis_config.num_hidden_layers * 18 :  (9 + vis_config.num_hidden_layers * 18 - full_cnt);
         const size_t ctx_size = num_tensors * tensor_ovhd;
         _ctx.gctx = GGMLContext({.mem_size = ctx_size, .mem_buffer = nullptr, .no_alloc = true});
         _ctx.dtype = dtype;

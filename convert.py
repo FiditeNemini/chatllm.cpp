@@ -4762,7 +4762,8 @@ class QWen2_VLConverter(BaseConverter):
 
     @staticmethod
     def dump_config(f, config, ggml_type):
-        assert config.vision_config['hidden_act'] == 'quick_gelu'
+        if 'hidden_act' in config.vision_config:
+            assert config.vision_config['hidden_act'] == 'quick_gelu'
         config.vision_config['hidden_act'] = 'silu'
         config.vision_config['hidden_size'] = config.vision_config['embed_dim']
         QWen2_5VLConverter.dump_config(f, config, ggml_type)

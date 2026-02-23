@@ -1,5 +1,6 @@
 #include "hunyuan.h"
 #include <numeric>
+#include <string.h>
 #include "qwen.h"
 #include "deepseek.h"
 #include "../src/vision_process.h"
@@ -1084,6 +1085,11 @@ namespace chatllm::hunyuan::youtu::vit
         float image_std[3];
 
         bool fullatt_block_indices[VIT_MAX_LAYERS];
+
+        Config()
+        {
+            memset(this, 0, sizeof(Config));
+        }
     };
 
     class PatchEmbedding : public Linear
@@ -1454,7 +1460,6 @@ namespace chatllm::hunyuan::youtu::vl
         if (!vis_cfg.IsObject()) return false;
 
         vit::Config vis_config;
-        memset(&vis_config, 0, sizeof(vis_config));
 
         vis_config.dtype = this->config.dtype;
 

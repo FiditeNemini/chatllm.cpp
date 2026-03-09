@@ -442,7 +442,7 @@ def quantize_q4_k_block(tensor: torch.Tensor, GGML_QK_K: int) -> torch.CharTenso
     L = L.view(-1, 2, 32)
     L = L[:, 0, :] | (L[:, 1, :] << 4)
 
-    r = torch.cat((d.view(1).view(torch.int8), dmin.view(1).view(torch.int8), scales.view(torch.uint8), L.flatten().view(torch.uint8)), dim=-1)
+    r = torch.cat((d.view(1).view(torch.int8), dmin.view(1).view(torch.int8), scales, L.flatten()), dim=-1)
 
     return r
 
@@ -451,7 +451,14 @@ def quantize_q4_k(tensor: torch.Tensor, GGML_QK_K: int) -> torch.CharTensor:
     # equivalent to dequantize_row_q4_K in ggml-quants.c
     assert tensor.shape[tensor.ndim - 1] % GGML_QK_K == 0
     tensor = tensor.view(-1, GGML_QK_K)
-    blocks = [quantize_q4_k_block(tensor[i], GGML_QK_K) for i in range(tensor.shape[0])]
+    futures : List[torch.jit.Future[torch.Tensor]] = []
+    for i in range(tensor.shape[0]):
+        futures.append(torch.jit.fork(quantize_q4_k_block, tensor[i], GGML_QK_K))
+
+    blocks = []
+    for future in futures:
+        blocks.append(torch.jit.wait(future))
+
     tensor = torch.cat(blocks, dim=-1)
     return tensor
 

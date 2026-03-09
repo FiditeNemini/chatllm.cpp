@@ -2476,7 +2476,7 @@ namespace chatllm
 
         void load(const std::string &path, TensorLoader *loader) override
         {
-            Block::load(path, loader);
+            MLP::load(path, loader);
             gate.load(path + "gate.", loader);
         }
 

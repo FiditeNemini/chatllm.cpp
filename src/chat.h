@@ -1329,6 +1329,7 @@ namespace chatllm
             int batch_size;
             int cache_type;
             int re_quantize;
+            bool opt_speed;
             std::map<std::string, std::string> model_n_gpu_layers;
             std::map<std::string, std::string> additional;
             extra_args(int max_length, const std::string &layer_spec, bool moe_on_cpu, int n_threads, int batch_size, const std::string &cache_type,
@@ -1336,7 +1337,8 @@ namespace chatllm
                 : max_length(max_length), layer_spec(layer_spec), moe_on_cpu(moe_on_cpu), n_threads(n_threads),
                   batch_size(batch_size),
                   cache_type(ggml::str_to_type(cache_type, ggml::type::GGML_TYPE_F16)),
-                  re_quantize(ggml::str_to_type(re_quantize))
+                  re_quantize(ggml::str_to_type(re_quantize)),
+                  opt_speed(true)
             {}
             extra_args() : extra_args(-1, "", false, 1, 0, "") {}
         };

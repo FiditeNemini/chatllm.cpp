@@ -323,6 +323,9 @@ namespace chatllm
         // load config
         Config config;
 
+        // assign some global parameters
+        BlockParams::Optimization::speed = args.opt_speed;
+
         load_config<Config>(loader, config, args);
 
         // load tokenizer

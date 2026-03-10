@@ -245,7 +245,7 @@ namespace chatllm::qwen::v3_5
         key_dim(key_head_dim * num_key_heads),
         value_dim(value_head_dim * num_value_heads),
         num_v_heads(num_value_heads), num_k_heads(num_key_heads),
-        state(ggml::new_tensor_3d(ctx, ggml::type::GGML_TYPE_F32, head_v_dim, head_k_dim, num_v_heads)), // PERFORMANCE: F32 to make scale/out_proj happy
+        state(ggml::new_tensor_3d(ctx, ggml::type::GGML_TYPE_F16, head_v_dim, head_k_dim, num_v_heads)),
         conv1d(ctx, key_dim * 2 + value_dim, key_dim * 2 + value_dim, conv_kernel_dim, 1, 1, key_dim * 2 + value_dim, false),
         dt_bias(ggml::new_tensor_1d(ctx, ggml::type::GGML_TYPE_F32, num_value_heads)),
         A_log(ggml::new_tensor_1d(ctx, ggml::type::GGML_TYPE_F32, num_value_heads)),
@@ -257,6 +257,7 @@ namespace chatllm::qwen::v3_5
         in_proj_a(ctx, hidden_size, num_value_heads, false)
     {
         ctx->get_allocator()->alloc(state);
+        ggml::set_name(state, "QwenGatedDeltaNet::state");
     }
 
     int64_t QwenGatedDeltaNet::get_param_num(bool effective_only) const
@@ -391,8 +392,7 @@ namespace chatllm::qwen::v3_5
 
         if (n_past < 1)
         {
-            auto cleared = ggml::scale_inplace(ctx, state, 0.0f);
-            ggml::build_forward_expand(ctx, cleared);
+            Backend::tensor_memset(state, 0);
         }
 
         // continuous tensor: [hidden_size, qlen, ...]

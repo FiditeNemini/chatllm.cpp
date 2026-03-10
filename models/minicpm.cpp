@@ -385,10 +385,10 @@ namespace chatllm::minicpm::v3
         float long_factor[MAX_FACTOR_LEN];
     };
 
-    class MiniCPM3SelfAttention : public RoPESelfAttention<deepseek::v2_light::BaseMLAttention<true>>
+    class MiniCPM3SelfAttention : public RoPESelfAttention<deepseek::v2_light::BaseMLAttention>
     {
     private:
-        typedef RoPESelfAttention<deepseek::v2_light::BaseMLAttention<true>> Base;
+        typedef RoPESelfAttention<deepseek::v2_light::BaseMLAttention> Base;
     public:
         MiniCPM3SelfAttention(InitContext *ctx, int hidden_size, int num_attention_heads, int num_kv_heads, int max_length,
                       int q_lora_rank, int kv_lora_rank, int rope_dim, int qk_nope_head_dim, int v_head_dim, bool use_bias)

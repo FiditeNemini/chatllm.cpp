@@ -314,6 +314,12 @@ namespace chatllm
         public:
             static float rms_norm;
         };
+
+        class Optimization
+        {
+        public:
+            static bool speed;
+        };
     };
 
     class PreludeCacheDisable

@@ -1422,6 +1422,7 @@ namespace chatllm
     int  BlockParams::MoE::num_experts = 0;
     int  BlockParams::MoE::experts_per_tok = 0;
     float BlockParams::Epsilon::rms_norm = 1e-5f;
+    bool BlockParams::Optimization::speed = true;
 
     BlockParams::OverrideKProjBiased::OverrideKProjBiased(bool biased)
     {

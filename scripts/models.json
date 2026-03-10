@@ -4209,6 +4209,15 @@
                         "url": "chatllm_quantized_qwen3.5/qwen3.5-9b.bin"
                     }
                 }
+            },
+            "a3b": {
+                "default": "q4_1",
+                "quantized": {
+                    "q4_1": {
+                        "size": 22670528480,
+                        "url": "chatllm_quantized_qwen3.5/qwen3.5-35b-a3b-q4_1.bin"
+                    }
+                }
             }
         }
     }

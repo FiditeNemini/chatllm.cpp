@@ -457,7 +457,8 @@ Please use `--format completion` for these models.
 ## OCR Models
 
 * dots.ocr (`DotsOCRForCausalLM`)
-    * [x] [3B](https://huggingface.co/rednote-hilab/dots.ocr/tree/ba670c5dcf03ff4e02015558c95b4042f5dce069)
+    * [x] [3B](https://huggingface.co/rednote-hilab/dots.ocr/tree/ba670c5dcf03ff4e02015558c95b4042f5dce069),
+    [1.5](https://modelscope.cn/models/rednote-hilab/dots.ocr-1.5/tree/921040c0f036a0100f96065686ca7aaa8388f1fa)
 
     Note: Prompt for OCR: _{{image:...}}Extract the text content from this image_. [Here](https://github.com/rednote-hilab/dots.ocr/blob/master/dots_ocr/utils/prompts.py)
     are other prompts for OCR. Use `+single-turn` to discard history automatically.

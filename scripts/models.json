@@ -3591,6 +3591,22 @@
             }
         }
     },
+    "dots.ocr-1.5": {
+        "brief": "dots.ocr-1.5, a 3B-parameter multimodal model composed of a 1.2B vision encoder and a 1.7B language model.",
+        "default": "3b",
+        "license": "MIT",
+        "variants": {
+            "3b": {
+                "default": "q8",
+                "quantized": {
+                    "q8": {
+                        "size": 3235134800,
+                        "url": "chatllm_quantized_dots/dots.ocr-1.5.bin"
+                    }
+                }
+            }
+        }
+    },
     "nanonets-ocr2": {
         "brief": "Nanonets-OCR2 by Nanonets is a family of powerful, state-of-the-art image-to-markdown OCR models that go far beyond traditional text extraction.",
         "default": "1.5b",

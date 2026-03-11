@@ -242,10 +242,12 @@ namespace chatllm::dots::vit
 
             for (size_t i = 0; i < layers.size(); i++)
             {
+                ctx->move_to_layer((int)i);
                 layers[i]->attention.grid_h = grid_h;
                 layers[i]->attention.grid_w = grid_w;
                 output = layers[i]->forward(ctx, output, 0);
             }
+            ctx->move_to_layer(LayerAllocatorManager::MiscLayer::Epilog);
             output = post_trunk_norm.forward(ctx, output);
             output = multi_modal_projector.forward(ctx, output, grid_h, grid_w);
             return output;
@@ -323,8 +325,8 @@ namespace chatllm::dots::ocr
         assistant_token_id  = tp->PieceToId("<|assistant|>");
         end_user_token_id       = tp->PieceToId("<|endofuser|>");
         end_assistant_token_id  = tp->PieceToId("<|endofassistant|>");
-        vision_start_token_id   = tp->PieceToId("<|vision_start|>");
-        vision_end_token_id     = tp->PieceToId("<|vision_end|>");
+        vision_start_token_id   = tp->PieceToId("<|img|>");
+        vision_end_token_id     = tp->PieceToId("<|endofimg|>");
 
         std::vector<int> ids;
         tp->Encode("\n", &ids);
@@ -468,7 +470,7 @@ namespace chatllm::dots::ocr
         Base(config, runtime_config, ModelType::MODEL_TYPE_DOTS_OCR, false),
         max_patches(pad_arg->get()),
         vis_eval(runtime_config, "vis"),
-        vis_ctx(&backend_context),
+        vis_ctx(vis_eval.get_backend_context()),
         config(config)
     {
         delete pad_arg;
@@ -546,7 +548,9 @@ namespace chatllm::dots::ocr
 
         if (vision.get() == nullptr) return;
 
+        loader.push_allocator_manager(&vis_eval.get_backend_context()->layer_allocators);
         vision->load("vision_model.", &loader);
+        loader.pop_allocator_manager();
         if (vision->is_loaded())
         {
             _chat_encoder.vis_config = &vision->config;

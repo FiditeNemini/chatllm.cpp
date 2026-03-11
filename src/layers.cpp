@@ -1414,7 +1414,8 @@ namespace chatllm
         return tensor ? ggml_nelements(tensor) : 0;
     }
 
-    int  BlockParams::num_padding_embeddings = 0;
+    int  BlockParams::num_padding_embeddings      = 0;
+    int  BlockParams::max_projected_embedding     = -1;
     bool BlockParams::OverrideKProjBiased::active = false;
     bool BlockParams::OverrideKProjBiased::biased = false;
     bool BlockParams::DisableCache::disabled      = false;
@@ -1423,6 +1424,24 @@ namespace chatllm
     int  BlockParams::MoE::experts_per_tok = 0;
     float BlockParams::Epsilon::rms_norm = 1e-5f;
     bool BlockParams::Optimization::speed = true;
+
+    void BlockParams::set_padded_embedding_num(int num)
+    {
+        BlockParams::max_projected_embedding = num;
+    }
+
+    BlockParams::PadEmbedding::PadEmbedding(int n, int max)
+    {
+        n = std::min(n, max);
+        if (BlockParams::max_projected_embedding > 0)
+            n = std::min(n, BlockParams::max_projected_embedding);
+        BlockParams::num_padding_embeddings = n;
+    }
+
+    int BlockParams::get_padded_embedding_num(void)
+    {
+        return BlockParams::max_projected_embedding > 0 ? BlockParams::max_projected_embedding : BlockParams::num_padding_embeddings;
+    }
 
     BlockParams::OverrideKProjBiased::OverrideKProjBiased(bool biased)
     {
@@ -2195,9 +2214,9 @@ namespace chatllm
         if (attn_scaling)
         {
             if (attn_scaling_factor > 0)
-                attn_scores = ggml::scale_inplace(ctx, attn_scores, attn_scaling_factor);
+                attn_scores = ggml::scale(ctx, attn_scores, attn_scaling_factor);
             else
-                attn_scores = ggml::scale_inplace(ctx, attn_scores, 1.f / sqrtf((float)head_size));
+                attn_scores = ggml::scale(ctx, attn_scores, 1.f / sqrtf((float)head_size));
         }
 
         if (attn_scores_pp)

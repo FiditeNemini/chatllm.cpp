@@ -60,6 +60,7 @@ struct Args
     std::string re_quantize;
     std::map<std::string, std::string> model_n_gpu_layers;
     int max_length = -1;
+    int max_proj_length = -1;
     int max_context_length = 512;
     bool interactive = false;
     bool show = false;
@@ -155,6 +156,9 @@ void usage(const std::string &prog)
               << "                          generally, this is used to reduce KV cache size.\n"
               << "                          for models that does not show its max context window in `config.json`,\n"
               << "                          use this to enlarge it (use with caution!).\n"
+              << "  --max_proj_length N     max number of projected embeddings. (default: model specific)\n"
+              << "                          for vision, larger value means lossless, but intermediate tensors might to too large\n"
+              << "                          to be handled by GPU.\n"
               << "  --layer_spec LAYERS     select/redesign layers.\n"
               << "                          LAYERS=S0,S1,.... where S0/S1/... are like slices of Python, `start:stop[:step]`,\n"
               << "                          negative values in `start` and `stop` can be used referencing layers in reversed order,\n"
@@ -454,6 +458,7 @@ static size_t parse_args(Args &args, const std::vector<std::string> &argv)
             handle_para0("--sys_file",                    system,               load_txt)
             handle_para0("--ai_prefix",                   ai_prefix,            std::string)
             handle_param("--max_length",            "-l", max_length,           std::stoi)
+            handle_para0("--max_proj_length",             max_proj_length,      std::stoi)
             handle_param("--max_context_length",    "-c", max_context_length,   std::stoi)
             handle_para0("--extending",                   extending,            parse_extending_method)
             handle_para0("--sampling",                    sampling,             std::string)
@@ -914,7 +919,8 @@ static void run_qa_ranker(Args &args, chatllm::Pipeline &pipeline, TextStreamer 
     chatllm::ModelObject::extra_args pipe_args(args.max_length, args.layer_spec, args.moe_on_cpu, args.num_threads, args.batch_size, args.cache_dtype, args.re_quantize);\
     pipe_args.model_n_gpu_layers = args.model_n_gpu_layers; \
     pipe_args.additional = args.additional; \
-    pipe_args.opt_speed = args.opt_speed;
+    pipe_args.opt_speed = args.opt_speed;   \
+    pipe_args.max_proj_length = args.max_proj_length;
 
 chatllm::BaseStreamer *get_streamer_for_log(void);
 

@@ -1323,6 +1323,7 @@ namespace chatllm
         struct extra_args
         {
             int   max_length;
+            int   max_proj_length;
             std::string layer_spec;
             bool moe_on_cpu;
             int n_threads;
@@ -1334,7 +1335,7 @@ namespace chatllm
             std::map<std::string, std::string> additional;
             extra_args(int max_length, const std::string &layer_spec, bool moe_on_cpu, int n_threads, int batch_size, const std::string &cache_type,
                 const std::string &re_quantize = "")
-                : max_length(max_length), layer_spec(layer_spec), moe_on_cpu(moe_on_cpu), n_threads(n_threads),
+                : max_length(max_length), max_proj_length(-1), layer_spec(layer_spec), moe_on_cpu(moe_on_cpu), n_threads(n_threads),
                   batch_size(batch_size),
                   cache_type(ggml::str_to_type(cache_type, ggml::type::GGML_TYPE_F16)),
                   re_quantize(ggml::str_to_type(re_quantize)),

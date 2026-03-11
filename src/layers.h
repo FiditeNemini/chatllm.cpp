@@ -262,14 +262,16 @@ namespace chatllm
     class BlockParams
     {
     public:
-        static int num_padding_embeddings; // number extra (padding) embedding
         class PadEmbedding
         {
         public:
-            PadEmbedding(int n, int max) { BlockParams::num_padding_embeddings = n > max ? max : (n >= 0 ? n : 0); }
+            PadEmbedding(int n, int max);
             ~PadEmbedding(void) { BlockParams::num_padding_embeddings = 0; }
             int get(void) const { return BlockParams::num_padding_embeddings; }
         };
+
+        static int get_padded_embedding_num(void);
+        static void set_padded_embedding_num(int num);
 
         class OverrideKProjBiased
         {
@@ -320,6 +322,9 @@ namespace chatllm
         public:
             static bool speed;
         };
+    private:
+        static int num_padding_embeddings; // number extra (padding) embedding
+        static int max_projected_embedding;
     };
 
     class PreludeCacheDisable
@@ -594,9 +599,9 @@ namespace chatllm
         }
 
         Embedding(InitContext *ctx, ggml::type dtype, int num_embeddings, int embedding_dim)
-            : num_embeddings(num_embeddings), num_padded_embeddings(BlockParams::num_padding_embeddings),
+            : num_embeddings(num_embeddings), num_padded_embeddings(BlockParams::get_padded_embedding_num()),
               weight(ggml::new_tensor_2d(ctx, ggml::type_fallback(dtype, embedding_dim), embedding_dim,
-                     num_embeddings + BlockParams::num_padding_embeddings))
+                     num_embeddings + BlockParams::get_padded_embedding_num()))
         {
             ggml::set_input(weight);
         }
@@ -1522,7 +1527,7 @@ namespace chatllm
                                             ggml::tensor *attn_scores);
 
         // input & output: [qlen, heads, head_size]
-        // CAUTION: **inplace** operation is assumed.
+        // CAUTION: **inplace** operation is assumed for k & q.
         virtual ggml::tensor *apply_pos_embedding_k(ComputeContext *ctx, ggml::tensor *k, int hidden_size, int qlen, ggml::tensor * past) const { return k; }
         virtual ggml::tensor *apply_pos_embedding_q(ComputeContext *ctx, ggml::tensor *q, int hidden_size, int qlen, ggml::tensor * past) const { return q; }
         virtual ggml::tensor *apply_pos_embedding_kq(ComputeContext *ctx, ggml::tensor *kq, int hidden_size, int qlen, ggml::tensor *past) const { return kq; }

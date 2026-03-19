@@ -203,6 +203,10 @@ class LibChatLLM:
             obj.callback_async_done()
             return
 
+        if print_type == PrintType.PRINT_EVT_THOUGHT_COMPLETED.value:
+            obj.callback_thought_done()
+            return
+
         txt = s.decode()
         if print_type == PrintType.PRINT_CHAT_CHUNK.value:
             obj.callback_print(txt)

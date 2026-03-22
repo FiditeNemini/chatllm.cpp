@@ -112,11 +112,11 @@ namespace chatllm::exaone::v4
 
     bool Params::use_rope = true;
 
-    class ExaoneSelfAttention : public QKNormedRoPEAttention<RMSNorm, BaseAttention>
+    class ExaoneSelfAttention : public QKNormedRoPEAttention<RMSNormInplace, BaseAttention>
     {
     public:
         ExaoneSelfAttention(InitContext *ctx, int hidden_size, int num_attention_heads, int num_kv_heads, int max_length)
-            : QKNormedRoPEAttention<RMSNorm, BaseAttention>(ctx, hidden_size, num_attention_heads, num_kv_heads, max_length, false, false)
+            : QKNormedRoPEAttention<RMSNormInplace, BaseAttention>(ctx, hidden_size, num_attention_heads, num_kv_heads, max_length, false, false)
         {
             use_rope = Params::use_rope;
             if (use_rope)
@@ -127,14 +127,14 @@ namespace chatllm::exaone::v4
         }
     };
 
-    template <int sliding_window_len> class ExaoneSWASelfAttention : public QKNormedRoPEAttention<RMSNorm, SlidingWindowAttentionImpl<sliding_window_len>>
+    template <int sliding_window_len> class ExaoneSWASelfAttention : public QKNormedRoPEAttention<RMSNormInplace, SlidingWindowAttentionImpl<sliding_window_len>>
     {
     public:
         ExaoneSWASelfAttention(InitContext *ctx, int hidden_size, int num_attention_heads, int num_kv_heads, int max_length)
-            : QKNormedRoPEAttention<RMSNorm, SlidingWindowAttentionImpl<sliding_window_len>>
+            : QKNormedRoPEAttention<RMSNormInplace, SlidingWindowAttentionImpl<sliding_window_len>>
                 (ctx, hidden_size, num_attention_heads, num_kv_heads, max_length, false, false)
         {
-            typedef QKNormedRoPEAttention<RMSNorm, SlidingWindowAttentionImpl<sliding_window_len>> Base;
+            typedef QKNormedRoPEAttention<RMSNormInplace, SlidingWindowAttentionImpl<sliding_window_len>> Base;
             Base::freq_factors = ggml::new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size / num_attention_heads / 2);
             ctx->get_allocator()->alloc(Base::freq_factors);
         }

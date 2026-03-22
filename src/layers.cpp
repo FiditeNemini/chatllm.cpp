@@ -822,6 +822,13 @@ namespace chatllm
         return tensor;
     }
 
+    ggml::tensor *ggml::group_norm_inplace(ComputeContext *ctx, ggml::tensor *a, int n_groups, float eps)
+    {
+        ggml::tensor *tensor = ggml_group_norm_inplace(ctx->get_ctx(), a, n_groups, eps);
+        ctx->cb_op_tensor(tensor);
+        return tensor;
+    }
+
     ggml::tensor *ggml::rms_norm_inplace(ComputeContext *ctx, ggml::tensor *a, float eps)
     {
         ggml::tensor *tensor = ggml_rms_norm_inplace(ctx->get_ctx(), a, eps);
@@ -1893,26 +1900,54 @@ namespace chatllm
         ggml::tensor *output = nullptr;
 
         // input: [seqlen, normalized_shape]
-        if (num_groups == ggml::get_dim(weight, 0))
+
+        if (inplace)
         {
-            output = ggml::norm(ctx, input, eps);
-            output = ggml::mul(ctx, output, weight);
-            if (bias)
+            if (num_groups == ggml::get_dim(weight, 0))
             {
-                output = ggml::add(ctx, output, bias);
+                output = ggml::norm_inplace(ctx, input, eps);
+                output = ggml::mul_inplace(ctx, output, weight);
+                if (bias)
+                {
+                    output = ggml::add_inplace(ctx, output, bias);
+                }
+            }
+            else
+            {
+                output = ggml::group_norm_inplace(ctx, input, num_groups, eps);
+                auto weight_view = ggml::reshape(ctx, weight, 1, 1, ggml::get_dim(weight, 0));
+                output = ggml::mul_inplace(ctx, output, weight_view);
+                if (bias)
+                {
+                    auto bias_view = ggml::reshape(ctx, bias, 1, 1, ggml::get_dim(bias, 0));
+                    output = ggml::add_inplace(ctx, output, bias_view);
+                }
             }
         }
         else
         {
-            output = ggml::group_norm(ctx, input, num_groups, eps);
-            auto weight_view = ggml::reshape(ctx, weight, 1, 1, ggml::get_dim(weight, 0));
-            output = ggml::mul(ctx, output, weight_view);
-            if (bias)
+            if (num_groups == ggml::get_dim(weight, 0))
             {
-                auto bias_view = ggml::reshape(ctx, bias, 1, 1, ggml::get_dim(bias, 0));
-                output = ggml::add(ctx, output, bias_view);
+                output = ggml::norm(ctx, input, eps);
+                output = ggml::mul(ctx, output, weight);
+                if (bias)
+                {
+                    output = ggml::add(ctx, output, bias);
+                }
+            }
+            else
+            {
+                output = ggml::group_norm(ctx, input, num_groups, eps);
+                auto weight_view = ggml::reshape(ctx, weight, 1, 1, ggml::get_dim(weight, 0));
+                output = ggml::mul(ctx, output, weight_view);
+                if (bias)
+                {
+                    auto bias_view = ggml::reshape(ctx, bias, 1, 1, ggml::get_dim(bias, 0));
+                    output = ggml::add(ctx, output, bias_view);
+                }
             }
         }
+
         return output;
     }
 
@@ -2317,6 +2352,83 @@ namespace chatllm
         ggml::tensor *attn_scores = cross_attention_after_pe(ctx, hidden_size, n_past, qlen, query_layer, key_layer, v);
 
         return attn_scores;
+    }
+
+    LMBlock1Forward::LMBlock1Forward(Block *input_norm, Block *attention, Block *post_norm, Block *mlp, int id, float scale_depth):
+        id(id),
+        scale_depth(scale_depth),
+        input_layernorm(input_norm),
+        attention(attention),
+        post_attention_layernorm(post_norm),
+        mlp(mlp)
+    {}
+
+    ggml::tensor *LMBlock1Forward::forward(ComputeContext *ctx, ggml::tensor *hidden_states, int n_past)
+    {
+        ggml::tensor *residual = hidden_states;
+
+        hidden_states = input_layernorm->forward(ctx, hidden_states);
+        hidden_states = attention->forward(ctx, hidden_states, n_past);
+        if (id == 0)
+        {
+            //inspect_tensor(hidden_states, "attention");
+        }
+
+        if (scale_depth > 0.0f)
+        {
+            hidden_states = ggml::scale(ctx, hidden_states, scale_depth);
+        }
+
+        hidden_states = ggml::add(ctx, hidden_states, residual);
+        residual = hidden_states;
+
+        hidden_states = post_attention_layernorm->forward(ctx, hidden_states);
+        last_result_post_attn_norm = hidden_states;
+
+        hidden_states = mlp->forward(ctx, hidden_states);
+
+        if (scale_depth > 0.0f)
+        {
+            hidden_states = ggml::scale(ctx, hidden_states, scale_depth);
+        }
+
+        hidden_states = ggml::add(ctx, hidden_states, residual);
+
+        return hidden_states;
+    }
+
+    ggml::tensor *LMBlock1Forward::forward(ComputeContext *ctx, ggml::tensor *hidden_states, ggml::tensor *hidden_states2, int n_past)
+    {
+        ggml::tensor *residual = hidden_states;
+
+        hidden_states = input_layernorm->forward(ctx, hidden_states);
+        hidden_states = attention->forward(ctx, hidden_states, n_past);
+        if (id == 0)
+        {
+            //inspect_tensor(hidden_states, "attention");
+        }
+
+        if (scale_depth > 0.0f)
+        {
+            hidden_states = ggml::scale(ctx, hidden_states, scale_depth);
+        }
+
+        hidden_states = ggml::add(ctx, hidden_states, residual);
+        residual = hidden_states;
+
+        hidden_states = post_attention_layernorm->forward(ctx, hidden_states);
+        last_result_post_attn_norm = hidden_states;
+
+        hidden_states = mlp->forward(ctx, hidden_states, hidden_states2);
+
+        if (scale_depth > 0.0f)
+        {
+            hidden_states = ggml::scale(ctx, hidden_states, scale_depth);
+        }
+
+        hidden_states = ggml::add(ctx, hidden_states, residual);
+
+        return hidden_states;
     }
 
     BaseTensorPosHelper::BaseTensorPosHelper(int max_length)

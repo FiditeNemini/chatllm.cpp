@@ -1589,6 +1589,15 @@
                     }
                 }
             },
+            "4b-thinking": {
+                "default": "q8",
+                "quantized": {
+                    "q8": {
+                        "size": 4722642448,
+                        "url": "chatllm_quantized_qwen3/qwen3-vl-4b-thinking.bin"
+                    }
+                }
+            },
             "8b": {
                 "default": "q8",
                 "quantized": {
@@ -4236,6 +4245,21 @@
                 }
             }
         }
+    },
+    "penguin-vl": {
+        "brief": "PenguinVL is a compact Vision-Language Model designed to explore the efficiency limits of small-scale VLMs.",
+        "default": "2b",
+        "license": "Apache License 2.0",
+        "variants": {
+            "2b": {
+                "default": "q8",
+                "quantized": {
+                    "q8": {
+                        "size": 2308878176,
+                        "url": "chatllm_quantized_hunyuan/penguin-vl-2b.bin"
+                    }
+                }
+            }
+        }
     }
-
 }

@@ -276,6 +276,7 @@ class ModelType(Enum):
     KimiVL                  = ModelTypeTagChatImageVideoIn + 0x0000100
     SmolVLM                 = ModelTypeTagChatImageVideoIn + 0x0000200
     YoutuVL                 = ModelTypeTagChatImageVideoIn + 0x0000220
+    PenguinVL               = ModelTypeTagChatImageVideoIn + 0x0000221
 
     MiniCPM_O               = ModelTypeTagChatImageVideoAudioInAudioOut + 0x0000001
 
@@ -9379,6 +9380,63 @@ class YoutuVLConverter(BaseConverter):
 
         return weight_names
 
+class PenguinVLConverter(BaseConverter):
+    MODEL_TYPE = ModelType.PenguinVL
+
+    @classmethod
+    def state_dict_pp(cls, config, state_dict):
+        new_dict = {}
+        for name in state_dict:
+            tensor: torch.Tensor = state_dict[name]
+            new_name: str = name
+
+            if new_name.startswith('model.vision_encoder.vision_encoder.encoder.'):
+                new_name = new_name.replace('model.vision_encoder.vision_encoder.encoder.', 'visual.')
+            elif new_name.startswith('model.vision_encoder.vision_encoder.'):
+                new_name = new_name.replace('model.vision_encoder.vision_encoder.', 'visual.')
+            elif new_name.startswith('model.vision_projector.'):
+                new_name = new_name.replace('model.vision_projector.', 'vision_projector.')
+
+            new_dict[new_name] = tensor
+
+        return new_dict
+
+    @staticmethod
+    def dump_config(f, config, ggml_type):
+        assert config.vision_projector_type.startswith('mlp')
+        QWen3Converter.dump_config(f, config, ggml_type)
+
+    @staticmethod
+    def get_weight_names(config):
+        weight_names = QWen3Converter.get_weight_names(config)
+
+        for i in range(config.vision_encoder_config['num_hidden_layers']):
+            weight_names += [
+                f"visual.layers.{i}.input_layernorm.weight",
+                f"visual.layers.{i}.mlp.down_proj.weight",
+                f"visual.layers.{i}.mlp.gate_proj.weight",
+                f"visual.layers.{i}.mlp.up_proj.weight",
+                f"visual.layers.{i}.post_attention_layernorm.weight",
+                f"visual.layers.{i}.self_attn.k_proj.weight",
+                f"visual.layers.{i}.self_attn.k_norm.weight",
+                f"visual.layers.{i}.self_attn.q_proj.weight",
+                f"visual.layers.{i}.self_attn.q_norm.weight",
+                f"visual.layers.{i}.self_attn.v_proj.weight",
+                f"visual.layers.{i}.self_attn.o_proj.weight",
+            ]
+
+        weight_names += [
+            "visual.norm.weight",
+            "vision_projector.readout.0.bias",
+            "vision_projector.readout.0.weight",
+            "vision_projector.readout.2.bias",
+            "vision_projector.readout.2.weight",
+            "visual.embeddings.patch_embedding.bias",
+            "visual.embeddings.patch_embedding.weight",
+        ]
+
+        return weight_names
+
 def convert_grok_1_base(args, vocab, ggml_type):
     def ffn_size(emb_size, widening_factor):
         _ffn_size = int(widening_factor * emb_size) * 2 // 3
@@ -10047,6 +10105,8 @@ def main():
         YoutuConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
     elif arch == 'YoutuVLForConditionalGeneration':
         YoutuVLConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
+    elif arch == 'PenguinVLQwen3ForCausalLM':
+        PenguinVLConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
     elif arch == 'deepseek-r1-distill-qwen3':
         QWen3Converter.MODEL_TYPE = ModelType.DeepSeek_R1_Distill_QWen3
         QWen3Converter.convert(config, model_files, vocab, ggml_type, args.save_path)

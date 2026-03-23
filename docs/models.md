@@ -440,6 +440,7 @@ Please use `--format completion` for these models.
     [2B](https://huggingface.co/Qwen/Qwen3.5-2B/tree/15852e8c16360a2fea060d615a32b45270f8a8fc),
     [4B](https://huggingface.co/Qwen/Qwen3.5-4B/tree/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a),
     [9B](https://huggingface.co/Qwen/Qwen3.5-9B/tree/c202236235762e1c871ad0ccb60c8ee5ba337b9a),
+    [27B](https://huggingface.co/Qwen/Qwen3.5-27B/tree/b7ca741b86de18df552fd2cc952861e04621a4bd),
     [35B-A3B](https://huggingface.co/Qwen/Qwen3.5-35B-A3B/tree/ec2d4ece1ffb563322cbee9a48fe0e3fcbce0307)
 
 * SmolVLM2 (`SmolVLMForConditionalGeneration`)

@@ -429,7 +429,6 @@ namespace chatllm::orpheus::tts
         channels = 1;
         sample_rate = codec_config.sampling_rate;
 
-        Tokenizer *tok = dynamic_cast<Tokenizer *>(tokenizer);
         #if (1)
         bool completed = false;
         auto tokens = generate(input_ids, gen_config, false, completed, nullptr, nullptr);

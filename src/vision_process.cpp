@@ -245,8 +245,6 @@ namespace vision
                 {
                     const int start_x = c * optimal_width;
                     const int start_y = r * optimal_height;
-                    const int end_x   = std::min(start_x + optimal_width,  width);
-                    const int end_y   = std::min(start_y + optimal_height, height);
 
                     std::ostringstream oss;
                     oss << base.str();
@@ -932,7 +930,7 @@ namespace vision
                 fps, max_frames, (fs::path(tmp_dir) / "%04d.jpg").string().c_str());
         }
 
-        int ret = std::system(cmd);
+        (void)std::system(cmd);
 
         for (const auto &entry : fs::directory_iterator(tmp_dir))
         {
@@ -983,7 +981,7 @@ namespace vision
         MaxGridWidth param1(16);
 
         vision::image_load(fn, pixels, w, h, 14);
-        printf("%dx%d = %zd, %d\n", w, h, pixels.size() / 3, w * h == pixels.size() / 3);
+        printf("%dx%d = %zd, %d\n", w, h, pixels.size() / 3, w * h == (int64_t)pixels.size() / 3);
 
         std::vector<float> scaled;
         image_rescale(pixels, scaled);

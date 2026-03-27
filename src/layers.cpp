@@ -2609,7 +2609,6 @@ namespace chatllm
         // expected from v_cache: [batch, heads, head_size, qlen]
         {
             const int max_length = cache_length / batch;
-            const int head_size  = v_hidden_size / num_kv_heads;
 
             ggml::tensor * Vcur = ggml::transpose(ctx, v);
             ggml::tensor * v_cache_view = ggml::view_3d(ctx, v_cache, qlen, v_hidden_size, batch,
@@ -2622,7 +2621,6 @@ namespace chatllm
 
         // save k
         {
-            const int max_length = cache_length / batch;
             const int head_size  = k_hidden_size / num_kv_heads;
             const int64_t k_cache_row_size = ggml::row_size(ggml::type_of(k_cache), head_size);
 

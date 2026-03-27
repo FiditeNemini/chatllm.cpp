@@ -181,8 +181,8 @@ namespace chatllm::qwen::tts
         int stride,
         int groups):
         Block(),
-        stride(stride),
         kernel_size((kernel_size - 1) * dilation + 1),
+        stride(stride),
         padding(this->kernel_size - this->stride),
         conv(ctx, in_channels, out_channels, kernel_size, stride, 0, dilation, groups)
     {
@@ -1077,7 +1077,6 @@ namespace chatllm::qwen::tts
     void AttentiveStatisticsPooling::_compute_statistics(ComputeContext *ctx, ggml::tensor *x, ggml::tensor *m, ggml::tensor * &mean, ggml::tensor * &std)
     {
         const int seq_length    = (int)ggml::get_dim(x, 0);
-        const int total         = seq_length;
 
         mean = ggml::mul(ctx, x, m);
         mean = ggml::sum_rows(ctx, mean);
@@ -1095,7 +1094,6 @@ namespace chatllm::qwen::tts
         CHATLLM_CHECK(ggml::n_dims(inputs) <= 2);
 
         const int seq_length    = (int)ggml::get_dim(inputs, 0);
-        const int total         = seq_length;
 
         ggml::tensor *mean = nullptr;
         ggml::tensor *std  = nullptr;
@@ -1195,7 +1193,7 @@ namespace chatllm::qwen::tts
         if (config["sample_rate"].IsIntegral())
             sample_rate             = (int)config["sample_rate"].ToInt();
 
-        for (int i = 0; i < sizeof(enc_channels) / sizeof(enc_channels[0]); i++)
+        for (int i = 0; i < (int)(sizeof(enc_channels) / sizeof(enc_channels[0])); i++)
         {
             if (config["enc_channels"].IsArray())
                 enc_channels[i]             = (int)config["enc_channels"][i].ToInt();
@@ -1801,7 +1799,7 @@ namespace chatllm::qwen::v3_tts
         auto emb = dynamic_cast<Embedding *>(dynamic_cast<ModelClass *>(transformer)->word_embeddings);
         talker.project_speaker_embedding(gen_config, pcm_samples, ggml::type_of(emb->weight), buf);
 
-        CHATLLM_CHECK(buf.size() == ggml::row_size(emb->weight));
+        CHATLLM_CHECK((int64_t)buf.size() == ggml::row_size(emb->weight));
 
         int r = projected_token_num;
         projected_token_num += 1;
@@ -1926,7 +1924,6 @@ namespace chatllm::qwen::v3_tts
 
     int ConditionalGeneration::run_main_model(const GenerationConfig &gen_config, const int added_id, const std::vector<int> &code_block, std::vector<float> &last_hidden_states, Sampler *sampler)
     {
-        const int ids_count = (int)talker_mapped_ids.size();
         std::vector<float> logits;
 
         ForwardContext ctx(&backend_context);
@@ -1966,8 +1963,6 @@ namespace chatllm::qwen::v3_tts
         };
 
         transformer->custom_embedding = custom_embedding;
-
-        auto final_steps = dynamic_cast<LMFinalSteps *>(transformer->get_final_steps());
 
         ggml::tensor *r = transformer->forward(&ctx, nullptr, n_past);
 
@@ -2047,8 +2042,6 @@ namespace chatllm::qwen::v3_tts
 
         transformer->custom_embedding = custom_embedding;
 
-        auto final_steps = dynamic_cast<LMFinalSteps *>(transformer->get_final_steps());
-
         ggml::tensor *r = transformer->forward(&ctx, input_ids_tensor, n_past);
 
         ctx.move_to_layer(LayerAllocatorManager::MiscLayer::Epilog);
@@ -2121,8 +2114,6 @@ namespace chatllm::qwen::v3_tts
             const int speaker_id,
             std::vector<int16_t> &audio)
     {
-        Tokenizer *tok = dynamic_cast<Tokenizer *>(tokenizer);
-
         prepare_ids(gen_config, input_ids, instruct_ids, ref_ids, voice_clone_prompt, language_id, speaker_id);
         n_past = 0;
         n_past_offset = 0;

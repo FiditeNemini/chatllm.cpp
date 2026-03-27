@@ -31,7 +31,6 @@ namespace chatllm::maya::v1
             const int SOH_ID = 128259;
             const int EOH_ID = 128260;
             const int SOA_ID = 128261;
-            const int BOS_ID = 128000;
             const int TEXT_EOT_ID = 128009;
             const int CODE_START_TOKEN_ID = 128257;
 

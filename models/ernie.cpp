@@ -1,4 +1,5 @@
 #include "ernie.h"
+#include <cstring>
 #include "qwen.h"
 #include "../src/vision_process.h"
 
@@ -825,7 +826,6 @@ namespace chatllm::qianfan::ocr
 
                 for (auto &pixels : crops)
                 {
-                    const int patch_size = vis_config->patch_size;
                     std::vector<float> scaled;
                     std::vector<float> arranged;
 

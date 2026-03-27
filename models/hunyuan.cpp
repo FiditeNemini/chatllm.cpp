@@ -477,7 +477,7 @@ namespace chatllm::hunyuan::wedlm
                 BaseTensorPosHelper::prepare_pos_tensor(ctx, pos, n_past, qlen);
                 return;
             }
-            CHATLLM_CHECK(v_pos.size() == qlen);
+            CHATLLM_CHECK((int64_t)v_pos.size() == qlen);
             ggml::set_dim(pos, 0, qlen);
             Backend::write_tensor_data(pos, v_pos.data(), 0, qlen * sizeof(v_pos[0]));
         }

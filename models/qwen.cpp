@@ -1550,7 +1550,7 @@ namespace chatllm::qwen::v2_5_vl
 
     void TensorPosHelper3D::prepare_pos_tensor(ComputeContext *ctx, ggml::tensor *pos, const int n_past, const int qlen)
     {
-        CHATLLM_CHECK(qlen + offset <= v_t.size());
+        CHATLLM_CHECK(qlen + offset <= (int64_t)v_t.size());
 
         v_pos.clear();
         v_pos.resize(qlen * 4, 0);
@@ -2972,8 +2972,8 @@ namespace chatllm::qwen::v3_asr
             ModelType type, bool skip_lm_head):
         v2_audio::ExtendEmbedding(10000),
         v3::ConditionalGeneration(config, runtime_config, type, skip_lm_head, skip_lm_head ? 1 : 0),
-        extended_vocab_size(pad_arg->get()),
-        audio(runtime_config)
+        audio(runtime_config),
+        extended_vocab_size(pad_arg->get())
     {
         delete pad_arg;
         multi_turn = false;
@@ -3006,7 +3006,6 @@ namespace chatllm::qwen::v3_asr
 
     bool ConditionalGeneration::load_more(const json::JSON &config)
     {
-        Tokenizer *tok = dynamic_cast<Tokenizer *>(tokenizer);
         Base::load_more(config);
 
         auto tok_cfg = config["tokenizer_config.json"]["added_tokens_decoder"];
@@ -3035,7 +3034,6 @@ namespace chatllm::qwen::v3_asr
 
     void ConditionalGeneration::load(ModelLoader &loader)
     {
-        Tokenizer* tok = dynamic_cast<Tokenizer*>(tokenizer);
         v3::ConditionalGeneration::load(loader);
 
         loader.add_tensor_name_translations({
@@ -3304,7 +3302,7 @@ namespace chatllm::qwen::v3_forcedaligner
                     if (left_val.has_value() && right_val.has_value())
                     {
                         double step = (right_val.value() - left_val.value()) / (anomaly_count + 1);
-                        for (size_t k = i; k < j; ++k)
+                        for (int k = i; k < j; ++k)
                         {
                             result[k] = left_val.value() + (step * (k - i + 1));
                         }
@@ -3505,7 +3503,6 @@ namespace chatllm::qwen::v3_forcedaligner
     void split_cjk(const std::vector<uint32_t> &u32, std::vector<std::vector<uint32_t>> &words)
     {
         std::vector<uint32_t> w;
-        bool flag = false;
         for (auto c : u32)
         {
             if (is_cpt_cjk(c))

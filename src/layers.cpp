@@ -609,6 +609,8 @@ namespace chatllm
 
     ggml::tensor *ggml::reshape_1d(ComputeContext *ctx, ggml::tensor *a, int64_t ne0)
     {
+        if (!ggml::is_contiguous(a))
+            a = ggml::cont(ctx, a);
         ggml::tensor *tensor = ggml_reshape_1d(ctx->get_ctx(), a, ne0);
         ctx->cb_op_tensor(tensor);
         return tensor;
@@ -616,6 +618,8 @@ namespace chatllm
 
     ggml::tensor *ggml::reshape_2d(ComputeContext *ctx, ggml::tensor *a, int64_t ne0, int64_t ne1)
     {
+        if (!ggml::is_contiguous(a))
+            a = ggml::cont(ctx, a);
         ggml::tensor *tensor = ggml_reshape_2d(ctx->get_ctx(), a, ne0, ne1);
         ctx->cb_op_tensor(tensor);
         return tensor;
@@ -623,6 +627,8 @@ namespace chatllm
 
     ggml::tensor *ggml::reshape_3d(ComputeContext *ctx, ggml::tensor *a, int64_t ne0, int64_t ne1, int64_t ne2)
     {
+        if (!ggml::is_contiguous(a))
+            a = ggml::cont(ctx, a);
         ggml::tensor *tensor = ggml_reshape_3d(ctx->get_ctx(), a, ne0, ne1, ne2);
         ctx->cb_op_tensor(tensor);
         return tensor;
@@ -2363,6 +2369,16 @@ namespace chatllm
         mlp(mlp)
     {}
 
+    void LMBlock1Forward::set_attn_scaling(ggml::tensor *weight)
+    {
+        attn_scale = weight;
+    }
+
+    void LMBlock1Forward::set_mlp_scaling(ggml::tensor *weight)
+    {
+        mlp_scale = weight;
+    }
+
     ggml::tensor *LMBlock1Forward::forward(ComputeContext *ctx, ggml::tensor *hidden_states, int n_past)
     {
         ggml::tensor *residual = hidden_states;
@@ -2374,10 +2390,15 @@ namespace chatllm
             //inspect_tensor(hidden_states, "attention");
         }
 
-        if (scale_depth > 0.0f)
+        if (attn_scale)
+        {
+            hidden_states = ggml::mul(ctx, hidden_states, attn_scale);
+        }
+        else if (scale_depth > 0.0f)
         {
             hidden_states = ggml::scale(ctx, hidden_states, scale_depth);
         }
+        else;
 
         hidden_states = ggml::add(ctx, hidden_states, residual);
         residual = hidden_states;
@@ -2387,10 +2408,15 @@ namespace chatllm
 
         hidden_states = mlp->forward(ctx, hidden_states);
 
-        if (scale_depth > 0.0f)
+        if (attn_scale)
+        {
+            hidden_states = ggml::mul(ctx, hidden_states, mlp_scale);
+        }
+        else if (scale_depth > 0.0f)
         {
             hidden_states = ggml::scale(ctx, hidden_states, scale_depth);
         }
+        else;
 
         hidden_states = ggml::add(ctx, hidden_states, residual);
 
@@ -2716,7 +2742,7 @@ namespace chatllm
         const int head_size = hidden_size / num_attention_heads;
 
         // [qlen, hidden_size] -> [heads, head_size, qlen]
-        ggml::tensor *r = ggml::reshape_3d(ctx, raw_v, head_size, num_kv_heads, qlen);  // -> [qlen, heads, head_size]
+        ggml::tensor *r = ggml::reshape_4d(ctx, raw_v, head_size, num_kv_heads, qlen, ggml::get_dim(raw_v, 2));  // -> [qlen, heads, head_size, batch]
         r = ggml::permute(ctx, r, 1, 2, 0, 3);   // [heads, head_size, qlen]
         r = ggml::cont(ctx, r);
         return r;

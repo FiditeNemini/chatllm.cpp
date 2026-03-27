@@ -473,6 +473,9 @@ Please use `--format completion` for these models.
 * GLM-OCR (`GlmOcrForConditionalGeneration`)
     * [x] [0.9B](https://huggingface.co/zai-org/GLM-OCR/tree/677c6baa60442a451f8a8c7eabdfab32d9801a0b)
 
+* Qianfan-OCR (`InternVLChatModel`)
+    * [x] [4B](https://huggingface.co/baidu/Qianfan-OCR/tree/5e181e708edb4089b7b4cab94279c46c6a2604fc)
+
 ## ASR Models
 
 * GLM-ASR (`GlmAsrForConditionalGeneration`)

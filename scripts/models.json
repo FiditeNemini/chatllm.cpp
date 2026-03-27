@@ -4270,5 +4270,21 @@
                 }
             }
         }
+    },
+    "qianfan-ocr": {
+        "brief": "Qianfan-OCR is a 4B-parameter end-to-end document intelligence model developed by the Baidu Qianfan Team.",
+        "default": "4b",
+        "license": "Apache License 2.0",
+        "variants": {
+            "4b": {
+                "default": "q8",
+                "quantized": {
+                    "q8": {
+                        "size": 5044597152,
+                        "url": "chatllm_quantized_ernie/qianfan-ocr.bin"
+                    }
+                }
+            }
+        }
     }
 }

@@ -264,6 +264,7 @@ class ModelType(Enum):
     Mistral3                = ModelTypeTagChatImageIn + 0x0000030
     StepVL                  = ModelTypeTagChatImageIn + 0x0000040
     GLM_OCR                 = ModelTypeTagChatImageIn + 0x0000050
+    QianFanOCR              = ModelTypeTagChatImageIn + 0x0000060
 
     Qwen2Audio              = ModelTypeTagChatAudioIn + 0x0000001
     Qwen3ForcedAligner      = ModelTypeTagChatAudioIn + 0x0000002
@@ -9437,6 +9438,87 @@ class PenguinVLConverter(BaseConverter):
 
         return weight_names
 
+class QianFanOCRConverter(BaseConverter):
+    MODEL_TYPE = ModelType.QianFanOCR
+
+    @classmethod
+    def state_dict_pp(cls, config, state_dict):
+        r = {}
+        for name in state_dict:
+            tensor: torch.Tensor = state_dict[name]
+            new_name: str = name
+            if new_name.startswith('language_model.'):
+                new_name = new_name.replace('language_model.', '')
+            elif new_name.startswith('vision_model.encoder.layers.'):
+                new_name = new_name.replace('vision_model.encoder.layers.', 'visual.layers.')
+                if '.qkv.' in name:
+                    r[new_name.replace('.attn.qkv.', '.self_attn.q_proj.')] = part(tensor, 0, 3).contiguous()
+                    r[new_name.replace('.attn.qkv.', '.self_attn.k_proj.')] = part(tensor, 1, 3).contiguous()
+                    r[new_name.replace('.attn.qkv.', '.self_attn.v_proj.')] = part(tensor, 2, 3).contiguous()
+                elif '.proj.' in name:
+                    r[new_name.replace('.attn.proj.', '.self_attn.o_proj.')] = tensor
+                else:
+                    r[new_name] = tensor
+                continue
+            elif new_name.startswith('vision_model.'):
+                new_name = new_name.replace('vision_model.', 'visual.')
+            elif new_name.startswith('mlp1.'):
+                new_name = new_name.replace('mlp1.', 'vision_projector.')
+
+            r[new_name] = tensor
+
+        return r
+
+    @staticmethod
+    def dump_config(f, config, ggml_type):
+        QianFanOCRConverter.txt_config = AttributeDict(config.llm_config)
+        QianFanOCRConverter.vis_config = AttributeDict(config.vision_config)
+        assert QianFanOCRConverter.txt_config.architectures[0] == 'Qwen3ForCausalLM'
+        assert QianFanOCRConverter.vis_config.architectures[0] == 'InternVisionModel'
+
+        QWen3Converter.dump_config(f, QianFanOCRConverter.txt_config, ggml_type)
+
+    @staticmethod
+    def get_weight_names(config):
+        weight_names = QWen3Converter.get_weight_names(QianFanOCRConverter.txt_config)
+
+        for i in range(QianFanOCRConverter.vis_config['num_hidden_layers']):
+            weight_names += [
+                f"visual.layers.{i}.self_attn.q_proj.bias",
+                f"visual.layers.{i}.self_attn.q_proj.weight",
+                f"visual.layers.{i}.self_attn.k_proj.bias",
+                f"visual.layers.{i}.self_attn.k_proj.weight",
+                f"visual.layers.{i}.self_attn.v_proj.bias",
+                f"visual.layers.{i}.self_attn.v_proj.weight",
+                f"visual.layers.{i}.self_attn.o_proj.bias",
+                f"visual.layers.{i}.self_attn.o_proj.weight",
+                f"visual.layers.{i}.mlp.fc1.bias",
+                f"visual.layers.{i}.mlp.fc1.weight",
+                f"visual.layers.{i}.mlp.fc2.bias",
+                f"visual.layers.{i}.mlp.fc2.weight",
+                f"visual.layers.{i}.norm1.bias",
+                f"visual.layers.{i}.norm1.weight",
+                f"visual.layers.{i}.norm2.bias",
+                f"visual.layers.{i}.norm2.weight",
+                f"visual.layers.{i}.ls1",
+                f"visual.layers.{i}.ls2",
+            ]
+
+        weight_names += [
+            "vision_projector.0.bias",
+            "vision_projector.0.weight",
+            "vision_projector.1.bias",
+            "vision_projector.1.weight",
+            "vision_projector.3.bias",
+            "vision_projector.3.weight",
+            "visual.embeddings.class_embedding",
+            "visual.embeddings.patch_embedding.bias",
+            "visual.embeddings.patch_embedding.weight",
+            "visual.embeddings.position_embedding",
+        ]
+
+        return weight_names
+
 def convert_grok_1_base(args, vocab, ggml_type):
     def ffn_size(emb_size, widening_factor):
         _ffn_size = int(widening_factor * emb_size) * 2 // 3
@@ -10107,6 +10189,8 @@ def main():
         YoutuVLConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
     elif arch == 'PenguinVLQwen3ForCausalLM':
         PenguinVLConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
+    elif arch == 'InternVLChatModel':
+        QianFanOCRConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
     elif arch == 'deepseek-r1-distill-qwen3':
         QWen3Converter.MODEL_TYPE = ModelType.DeepSeek_R1_Distill_QWen3
         QWen3Converter.convert(config, model_files, vocab, ggml_type, args.save_path)

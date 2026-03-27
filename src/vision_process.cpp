@@ -352,6 +352,105 @@ namespace vision
     }
 
     void image_load_pan_and_scan(const char *fn, std::vector<image_pixels_t> &crops,
+        int &crops_per_row,
+        int &num_crop_rows,
+        const int min_num_crops, const int max_num_crops, const int crop_size,
+        const bool use_thumbnail)
+    {
+        crops.clear();
+        crops_per_row = 0;
+        num_crop_rows = 0;
+
+        int width = -1;
+        int height = -1;
+        image_dimension(fn, width, height);
+        if (width <= 0) return;
+
+        auto find_closest_aspect_ratio = [min_num_crops, max_num_crops](const int img_width, const int img_height, const int crop_size, int &crops_per_row, int &num_crop_rows)
+        {
+            crops_per_row = 1;
+            num_crop_rows = 1;
+            double best_ratio_diff = INFINITY;
+            const double aspect_ratio = (double)img_width / img_height;
+            const double area = (double)img_width * img_height;
+            for (int i = 1; i < max_num_crops; i++)
+            {
+                for (int j = 1; j < max_num_crops / i + 1; j++)
+                {
+                    if ((i * j < min_num_crops) || (i * j > max_num_crops)) continue;
+                    auto target_aspect_ratio = (double)i / j;
+                    auto ratio_diff = abs(aspect_ratio - target_aspect_ratio);
+                    if (ratio_diff < best_ratio_diff)
+                    {
+                        best_ratio_diff = ratio_diff;
+                        crops_per_row = i;
+                        num_crop_rows = j;
+                    }
+                    else if (abs(aspect_ratio - best_ratio_diff) < 1e-10)
+                    {
+                        if (area > 0.5 * crop_size * crop_size * i * j)
+                        {
+                            crops_per_row = i;
+                            num_crop_rows = j;
+                        }
+                    }
+                }
+            }
+        };
+
+        find_closest_aspect_ratio(width, height, crop_size, crops_per_row, num_crop_rows);
+
+        struct bbox
+        {
+            int x, y;
+            int w, h;
+        };
+
+        std::vector<bbox> windows;
+
+        for (int i = 0; i < num_crop_rows; i++)
+        {
+            for (int j = 0; j < crops_per_row; j++)
+            {
+                bbox b;
+                b.x = j * crop_size;
+                b.y = i * crop_size;
+                b.w = crop_size;
+                b.h = crop_size;
+                windows.push_back(b);
+            }
+        }
+
+        const int resized_width = crops_per_row * crop_size;
+        const int resized_height = num_crop_rows * crop_size;
+
+        for (auto b : windows)
+        {
+            std::ostringstream oss;
+            oss << MAGICK_CONVERT_CMD << " -depth 8 \"" << std::string(fn) << "\"";
+            oss << " -resize " << resized_width << "x" << resized_height << "!";
+            oss << " -crop " << b.w << "x" << b.h << "+" << b.x << "+" << b.y;
+            oss << " -resize " << crop_size << "x" << crop_size << "!";
+
+            crops.emplace_back(image_pixels_t());
+            auto &image = crops.back();
+            run_cmd(oss, image);
+        }
+
+        // whole image
+        if (use_thumbnail && (windows.size() > 1))
+        {
+            std::ostringstream oss;
+            oss << MAGICK_CONVERT_CMD << " -depth 8 \"" << std::string(fn) << "\"";
+            oss << " -resize " << crop_size << "x" << crop_size << "!";
+
+            crops.emplace_back(image_pixels_t());
+            auto &image = crops.back();
+            run_cmd(oss, image);
+        }
+    }
+
+    void image_load_pan_and_scan(const char *fn, std::vector<image_pixels_t> &crops,
         const int image_size, int crop_size, int &crops_per_row)
     {
         const int MAX_IMAGE_SIZE = 3024;

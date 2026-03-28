@@ -4286,5 +4286,57 @@
                 }
             }
         }
+    },
+    "internvl3.5": {
+        "brief": "InternVL3.5, a new family of open-source multimodal models that significantly advances versatility, reasoning capability, and inference efficiency along the InternVL series.",
+        "default": "1b",
+        "license": "Apache License Version 2.0",
+        "variants": {
+            "1b": {
+                "default": "q8",
+                "quantized": {
+                    "q8": {
+                        "size": 1133385760,
+                        "url": "chatllm_quantized_internvl/intervl3.5-1b.bin"
+                    }
+                }
+            },
+            "2b": {
+                "default": "q8",
+                "quantized": {
+                    "q8": {
+                        "size": 2501478432,
+                        "url": "chatllm_quantized_internvl/intervl3.5-2b.bin"
+                    }
+                }
+            },
+            "4b": {
+                "default": "q8",
+                "quantized": {
+                    "q8": {
+                        "size": 5034849824,
+                        "url": "chatllm_quantized_internvl/intervl3.5-4b.bin"
+                    }
+                }
+            },
+            "8b": {
+                "default": "q8",
+                "quantized": {
+                    "q8": {
+                        "size": 9068256816,
+                        "url": "chatllm_quantized_internvl/intervl3.5-8b.bin"
+                    }
+                }
+            },
+            "a3b": {
+                "default": "q4_1",
+                "quantized": {
+                    "q8": {
+                        "size": 19289054672,
+                        "url": "chatllm_quantized_internvl/internvl3.5-30b-a3b-q4_1.bin"
+                    }
+                }
+            }
+        }
     }
 }

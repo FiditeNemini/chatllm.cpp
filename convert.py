@@ -264,7 +264,7 @@ class ModelType(Enum):
     Mistral3                = ModelTypeTagChatImageIn + 0x0000030
     StepVL                  = ModelTypeTagChatImageIn + 0x0000040
     GLM_OCR                 = ModelTypeTagChatImageIn + 0x0000050
-    QianFanOCR              = ModelTypeTagChatImageIn + 0x0000060
+    InternVL                = ModelTypeTagChatImageIn + 0x0000060
 
     Qwen2Audio              = ModelTypeTagChatAudioIn + 0x0000001
     Qwen3ForcedAligner      = ModelTypeTagChatAudioIn + 0x0000002
@@ -9438,8 +9438,8 @@ class PenguinVLConverter(BaseConverter):
 
         return weight_names
 
-class QianFanOCRConverter(BaseConverter):
-    MODEL_TYPE = ModelType.QianFanOCR
+class InternVLConverter(BaseConverter):
+    MODEL_TYPE = ModelType.InternVL
 
     @classmethod
     def state_dict_pp(cls, config, state_dict):
@@ -9471,18 +9471,18 @@ class QianFanOCRConverter(BaseConverter):
 
     @staticmethod
     def dump_config(f, config, ggml_type):
-        QianFanOCRConverter.txt_config = AttributeDict(config.llm_config)
-        QianFanOCRConverter.vis_config = AttributeDict(config.vision_config)
-        assert QianFanOCRConverter.txt_config.architectures[0] == 'Qwen3ForCausalLM'
-        assert QianFanOCRConverter.vis_config.architectures[0] == 'InternVisionModel'
+        InternVLConverter.txt_config = AttributeDict(config.llm_config)
+        InternVLConverter.vis_config = AttributeDict(config.vision_config)
+        assert InternVLConverter.txt_config.architectures[0] in ['Qwen3ForCausalLM', 'Qwen3MoeForCausalLM']
+        assert InternVLConverter.vis_config.architectures[0] == 'InternVisionModel'
 
-        QWen3Converter.dump_config(f, QianFanOCRConverter.txt_config, ggml_type)
+        QWen3Converter.dump_config(f, InternVLConverter.txt_config, ggml_type)
 
     @staticmethod
     def get_weight_names(config):
-        weight_names = QWen3Converter.get_weight_names(QianFanOCRConverter.txt_config)
+        weight_names = QWen3Converter.get_weight_names(InternVLConverter.txt_config)
 
-        for i in range(QianFanOCRConverter.vis_config['num_hidden_layers']):
+        for i in range(InternVLConverter.vis_config['num_hidden_layers']):
             weight_names += [
                 f"visual.layers.{i}.self_attn.q_proj.bias",
                 f"visual.layers.{i}.self_attn.q_proj.weight",
@@ -10190,7 +10190,7 @@ def main():
     elif arch == 'PenguinVLQwen3ForCausalLM':
         PenguinVLConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
     elif arch == 'InternVLChatModel':
-        QianFanOCRConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
+        InternVLConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
     elif arch == 'deepseek-r1-distill-qwen3':
         QWen3Converter.MODEL_TYPE = ModelType.DeepSeek_R1_Distill_QWen3
         QWen3Converter.convert(config, model_files, vocab, ggml_type, args.save_path)

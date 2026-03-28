@@ -417,6 +417,13 @@ Please use `--format completion` for these models.
     * `native_resolution`: use native resolution or not, default: `false` (This seems sensitive to quantization, so defaults to `false`).
     * `fps`: Default 1.0.
 
+* InternVL (`InternVLChatModel`)
+    * [x] 3.5: [1B](https://huggingface.co/OpenGVLab/InternVL3_5-1B/tree/2f71cf52542334823e48a46ffba0e2bc9add3446),
+    [2B](https://huggingface.co/OpenGVLab/InternVL3_5-2B/commit/7d7bd7bcc35b77b391883ebd7f9686cfa0e25cc0),
+    [4B](https://huggingface.co/OpenGVLab/InternVL3_5-4B/tree/481f6e32467eab4e922ccd7fd6cf420441a62331),
+    [8B](https://huggingface.co/OpenGVLab/InternVL3_5-8B/tree/9bb6a56ad9cc69db95e2d4eeb15a52bbcac4ef79),
+    [30B-A3B](https://huggingface.co/OpenGVLab/InternVL3_5-30B-A3B/tree/ba1762d830e2aeddb3272b66ba9e0abf7e69f626)
+
 * Mistral (`Mistral3ForConditionalGeneration`)
     * [x] Ministral-3: [3B-Instruct-2512](https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-BF16/tree/e904b5a798e9397c0fd04e063a2aa90355653ffe),
     [3B-Reasoning-2512](https://huggingface.co/mistralai/Ministral-3-3B-Reasoning-2512/tree/039f888eb54340b5e9870721f3c249fbc809b8e8),

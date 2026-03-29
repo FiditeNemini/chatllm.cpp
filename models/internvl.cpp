@@ -520,7 +520,7 @@ namespace chatllm::intern::vl
     void ChatHistoryEncoder::append_content_qianfanvl(const Content &user, std::vector<int> &ids) const
     {
         Tokenizer *tok = dynamic_cast<Tokenizer *>(tokenizer);
-printf("qianfan");
+
         tok->media_emb.clear();
 
         std::string question;

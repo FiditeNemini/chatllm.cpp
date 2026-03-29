@@ -1071,6 +1071,7 @@ namespace chatllm::hunyuan::youtu::vit
     {
         ggml::type dtype;
         int patch_size;
+        int image_max_size;
         int max_patches;
         int num_attention_heads;
         int num_hidden_layers;
@@ -1376,6 +1377,8 @@ namespace chatllm::hunyuan::youtu::vl
             std::vector<uint8_t> pixels;
             const int patch_size = vis_config->patch_size;
 
+            vision::MaxGridWidth    param3(vis_config->image_max_size / vis_config->patch_size);
+            vision::MaxGridHeight   param4(vis_config->image_max_size / vis_config->patch_size);
             vision::MaxPatchNum     param1(vis_config->max_patches);
             vision::MergeKernel     param2(vis_config->spatial_merge_size, vis_config->spatial_merge_size);
 
@@ -1475,6 +1478,9 @@ namespace chatllm::hunyuan::youtu::vl
         vis_config.tokens_per_second    = (int)vis_cfg["tokens_per_second"].ToInt();
         vis_config.out_hidden_size      = (int)vis_cfg["out_hidden_size"].ToInt();
         vis_config.num_channels         = (int)vis_cfg["num_channels"].ToInt();
+        vis_config.image_max_size       = 2048; // see <x_2047>
+        vis_config.max_patches          = (vis_config.image_max_size / vis_config.patch_size) * (vis_config.image_max_size / vis_config.patch_size);
+        vis_config.max_patches          = std::min(vis_config.max_patches, max_patches);
 
         CHATLLM_CHECK(vis_config.out_hidden_size == this->config.hidden_size);
         CHATLLM_CHECK(vis_config.num_channels    == 3);
@@ -1502,8 +1508,6 @@ namespace chatllm::hunyuan::youtu::vl
             vis_config.image_std[0]     = (float)image_std[0].ToFloat();
             vis_config.image_std[1]     = (float)image_std[1].ToFloat();
             vis_config.image_std[2]     = (float)image_std[2].ToFloat();
-
-            vis_config.max_patches      = max_patches;
         }
 
         const size_t tensor_ovhd = ggml_tensor_overhead();

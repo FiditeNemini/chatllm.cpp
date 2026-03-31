@@ -1319,6 +1319,20 @@ namespace chatllm
         return r;
     }
 
+    ggml::tensor *ggml::flash_attention(ComputeContext *ctx,
+            ggml::tensor  * q,
+            ggml::tensor  * k,
+            ggml::tensor  * v,
+            ggml::tensor  * mask,
+            float           scale,
+            float           max_bias,
+            float           logit_softcap)
+    {
+        ggml::tensor *tensor = ggml_flash_attn_ext(ctx->get_ctx(), q, k, v, mask, scale, max_bias, logit_softcap);
+        ctx->cb_op_tensor(tensor);
+        return tensor;
+    }
+
     ggml::tensor *ggml::map_custom1(ComputeContext *ctx, ggml::tensor *a, const ggml_custom1_op_t fun, int n_tasks, void *userdata)
     {
         ggml::tensor *tensor = ggml_map_custom1(ctx->get_ctx(), a, fun, n_tasks, userdata);
@@ -1427,16 +1441,17 @@ namespace chatllm
         return tensor ? ggml_nelements(tensor) : 0;
     }
 
-    int  BlockParams::num_padding_embeddings      = 0;
-    int  BlockParams::max_projected_embedding     = -1;
-    bool BlockParams::OverrideKProjBiased::active = false;
-    bool BlockParams::OverrideKProjBiased::biased = false;
-    bool BlockParams::DisableCache::disabled      = false;
-    int  BlockParams::CoreAttentionUseSinks::size = 0;
-    int  BlockParams::MoE::num_experts = 0;
-    int  BlockParams::MoE::experts_per_tok = 0;
-    float BlockParams::Epsilon::rms_norm = 1e-5f;
-    bool BlockParams::Optimization::speed = true;
+    int         BlockParams::num_padding_embeddings      = 0;
+    int         BlockParams::max_projected_embedding     = -1;
+    bool        BlockParams::OverrideKProjBiased::active = false;
+    bool        BlockParams::OverrideKProjBiased::biased = false;
+    bool        BlockParams::DisableCache::disabled      = false;
+    int         BlockParams::CoreAttentionUseSinks::size = 0;
+    int         BlockParams::MoE::num_experts = 0;
+    int         BlockParams::MoE::experts_per_tok = 0;
+    float       BlockParams::Epsilon::rms_norm = 1e-5f;
+    bool        BlockParams::Optimization::speed = true;
+    std::string BlockParams::FlashAttention::mode = "0";
 
     void BlockParams::set_padded_embedding_num(int num)
     {
@@ -1474,6 +1489,17 @@ namespace chatllm
     {
         DisableCache::disabled = false;
     }
+
+    void BlockParams::FlashAttention::set_mode(const std::string &mode)
+    {
+        BlockParams::FlashAttention::mode = mode;
+    }
+
+    bool BlockParams::FlashAttention::is_enabled(void)
+    {
+        return (mode == "1") || (mode == "on");
+    }
+
     bool BlockParams::DisableCache::is_disabled(void)
     {
         return DisableCache::disabled;
@@ -2306,9 +2332,67 @@ namespace chatllm
         return last_attn_scores;
     }
 
+    ggml::tensor *CoreAttention::get_shaped_v_from_cache(ComputeContext *ctx, const int hidden_size, const int n_past, const int qlen, VShapeFromCache shape)
+    {
+        auto v = get_v_from_cache(ctx, hidden_size, n_past, qlen);
+        if (v_shape == shape)
+            return v;
+
+        switch (v_shape)
+        {
+        case VShapeFromCache::Len_HeadSize_Heads_Batch:
+        case VShapeFromCache::HeadSize_Len_Heads_Batch:
+            {
+                v = ggml::transpose(ctx, v);
+                v = ggml::cont     (ctx, v);
+                return v;
+            }
+            break;
+        default:
+            CHATLLM_CHECK(false);
+            return nullptr;
+        }
+    }
+
+    void CoreAttention::before_eval(ComputeContext *ctx)
+    {
+        if (nullptr == rt_mask) return;
+
+        CHATLLM_CHECK(ggml::type_of(rt_mask) == ggml::type::GGML_TYPE_F16);
+
+        const int64_t n_kv = ggml::get_dim(rt_mask, 0);
+        const int64_t qlen = ggml::get_dim(rt_mask, 1);
+        const int64_t n_past = n_kv - qlen;
+        const int64_t n_batch = ggml::get_dim(rt_mask, 2);
+        std::vector<float> v_mask;
+        v_mask.resize(n_kv * qlen);
+
+        for (int64_t j = 0; j < qlen; j++)
+        {
+            for (int64_t i = 1 + j + n_past; i < n_kv; i++)
+            {
+                v_mask[n_kv * j + i] = - INFINITY;
+            }
+        }
+
+        std::vector<uint16_t> v_mask_f16;
+        v_mask_f16.resize(ggml::nelements(rt_mask));
+
+        ggml::from_float(ggml::type_of(rt_mask), v_mask.data(), v_mask_f16.data(), 1, ggml::nelements(rt_mask));
+
+        auto *p1 = v_mask_f16.data() + n_kv * qlen;
+        for (int64_t b = 1; b < n_batch; b++, p1 += n_kv * qlen)
+        {
+            memcpy(p1, v_mask_f16.data(), n_kv * qlen * sizeof(p1[0]));
+        }
+
+        Backend::write_tensor_data(rt_mask, v_mask_f16.data());
+    }
+
     ggml::tensor *CoreAttention::cross_attention_after_pe(ComputeContext *ctx, const int hidden_size, const int n_past, const int qlen,
                                              ggml::tensor *query_layer, ggml::tensor *key_layer, ggml::tensor *v)
     {
+        ggml::tensor *attn_scores = nullptr;
         const int head_size = hidden_size / num_attention_heads;
 
         if (!attn_scaling)
@@ -2316,14 +2400,39 @@ namespace chatllm
 
         // store key and value to memory
         save_to_cache(ctx, n_past, qlen, key_layer, v);
-
         query_layer = ggml::permute(ctx, query_layer, 0, 2, 1, 3);                     // [heads, qlen, head_size]
-
         key_layer = get_k_from_cache(ctx, hidden_size, n_past, qlen);
 
-        ggml::tensor * value_layer = get_v_from_cache(ctx, hidden_size, n_past, qlen);
+        if (use_flash_attn)
+        {
+            float scale = 1.0f;
+            rt_mask = nullptr;
 
-        ggml::tensor *attn_scores = calc_attn_scores(ctx, hidden_size, n_past, qlen, key_layer, query_layer, value_layer);
+            if (attn_scaling)
+            {
+                scale = attn_scaling_factor > 0 ? attn_scaling_factor : 1.f / sqrtf((float)head_size);
+            }
+
+            if (causal && (nullptr == mask))
+            {
+                rt_mask = ggml::new_tensor_3d(ctx, ggml::type::GGML_TYPE_F16, n_past + qlen, qlen, ggml::get_dim(query_layer, 3));
+                ggml::set_input(rt_mask);
+            }
+
+            ggml::tensor * value_layer = get_shaped_v_from_cache(ctx, hidden_size, n_past, qlen, VShapeFromCache::HeadSize_Len_Heads_Batch);
+
+            attn_scores = ggml::flash_attention(ctx, query_layer, key_layer, value_layer, mask ? mask : rt_mask, scale);
+
+            // [n_embd_v, n_head,  qlen, batch] -> [hidden_size, qlen, batch]
+            attn_scores = ggml::reshape_3d(ctx, attn_scores, hidden_size, ggml::get_dim(attn_scores, 2), ggml::get_dim(attn_scores, 3));
+        }
+        else
+        {
+            ggml::tensor * value_layer = get_shaped_v_from_cache(ctx, hidden_size, n_past, qlen, VShapeFromCache::Len_HeadSize_Heads_Batch);
+
+            attn_scores = calc_attn_scores(ctx, hidden_size, n_past, qlen, key_layer, query_layer, value_layer);
+        }
+
         return attn_scores;
     }
 
@@ -2511,6 +2620,43 @@ namespace chatllm
         prepare_pos_tensor(ctx, n_past, qlen);
     }
 
+    KVCacheAttention::KVCacheAttention(InitContext *ctx, int num_attention_heads, int num_kv_heads, int k_hidden_size, int v_hidden_size, int max_length,
+                         int cache_length):
+        CoreAttention(ctx, num_attention_heads, num_kv_heads, max_length),
+        k_hidden_size(k_hidden_size),
+        v_hidden_size(v_hidden_size),
+        cache_length(BlockParams::DisableCache::is_disabled() ? 0 : cache_length),
+        k_cache(nullptr), v_cache(nullptr), raw_k(nullptr), raw_v(nullptr)
+    {
+        if (cache_length > 0)
+        {
+            if (BlockParams::DisableCache::is_disabled())
+            {
+                k_cache = ggml::new_tensor_2d(ctx, ggml::type::GGML_TYPE_F16, 1, 1);
+                v_cache = ggml::new_tensor_2d(ctx, ggml::type::GGML_TYPE_F16, 1, 1);
+            }
+            else
+            {
+                k_cache = ggml::new_tensor_2d(ctx, ggml::type_fallback(ctx->cache_dtype, k_hidden_size / num_kv_heads), k_hidden_size, cache_length);
+                switch (v_shape)
+                {
+                case VShapeFromCache::Len_HeadSize_Heads_Batch:
+                    v_cache = ggml::new_tensor_2d(ctx, ggml::type::GGML_TYPE_F16, cache_length, v_hidden_size);
+                    break;
+                case VShapeFromCache::HeadSize_Len_Heads_Batch:
+                    v_cache = ggml::new_tensor_2d(ctx, ggml::type_fallback(ctx->cache_dtype, v_hidden_size / num_kv_heads), v_hidden_size, cache_length);
+                    break;
+                default:
+                    break;
+                }
+            }
+
+            ggml::set_name(k_cache, "k_cache");
+            ggml::set_name(v_cache, "v_cache");
+        }
+        else;
+    }
+
     size_t KVCacheAttention::read_cache_data(void *buffer, size_t buffer_size) const
     {
         size_t r = 0;
@@ -2582,15 +2728,45 @@ namespace chatllm
         }
     }
 
+    void KVCacheAttention::before_eval(ComputeContext *ctx)
+    {
+        CoreAttention::before_eval(ctx);
+        if (nullptr == rt_kv_pos) return;
+
+        const int qlen = (int)ggml::get_dim(rt_kv_pos, 0);
+        const int b    = (int)ggml::get_dim(rt_kv_pos, 1);
+
+        std::vector<int> v_pos;
+        v_pos.resize(ggml::nelements(rt_kv_pos));
+        for (int i = 0; i < b; i++)
+        {
+            for (int j = 0; j < qlen; j++)
+            {
+                v_pos[qlen * i + j] = rt_n_past + j;
+            }
+        }
+        Backend::write_tensor_data(rt_kv_pos, v_pos.data());
+    }
+
     void KVCacheAttention::save_to_cache(ComputeContext *ctx, const int n_past, const int qlen,
         ggml::tensor *k, ggml::tensor *v)
     {
+        rt_kv_pos = nullptr;
+
         // important: storing RoPE-ed version of K in the KV cache!
         if (cache_length < 1)
         {
             raw_k = k;
             raw_v = v;
             return;
+        }
+
+        // do a favor for MROPE
+        if (ggml::get_dim(pos, 0) != qlen)
+        {
+            rt_n_past = n_past;
+            rt_kv_pos = ggml::new_tensor_2d(ctx, ggml::type::GGML_TYPE_I32, qlen, ggml::get_dim(pos, 1));
+            ggml::set_input(rt_kv_pos);
         }
 
         int batch = ggml::get_dim(v, 2);
@@ -2604,37 +2780,53 @@ namespace chatllm
             v = ggml::repeat(ctx, v, 0, 0, batch);
         }
 
+        const int max_length = cache_length / batch;
+
         // save v
         // v input: [batch, qlen, hidden_size]
-        // expected from v_cache: [batch, heads, head_size, qlen]
+        switch (v_shape)
         {
-            const int max_length = cache_length / batch;
+        case VShapeFromCache::Len_HeadSize_Heads_Batch:
+            {
+                // expected from v_cache: [batch, heads, head_size, qlen]
 
-            ggml::tensor * Vcur = ggml::transpose(ctx, v);
-            ggml::tensor * v_cache_view = ggml::view_3d(ctx, v_cache, qlen, v_hidden_size, batch,
-                    ggml::element_size(v_cache) * max_length,
-                    ggml::element_size(v_cache) * max_length * v_hidden_size,
-                    n_past * ggml::element_size(v_cache));
+                ggml::tensor * Vcur = ggml::transpose(ctx, v);
+                ggml::tensor * v_cache_view = ggml::view_3d(ctx, v_cache, qlen, v_hidden_size, batch,
+                        ggml::element_size(v_cache) * max_length,
+                        ggml::element_size(v_cache) * max_length * v_hidden_size,
+                        n_past * ggml::element_size(v_cache));
 
-            ggml::build_forward_expand(ctx, ggml::cpy(ctx, Vcur, v_cache_view));
+                ggml::build_forward_expand(ctx, ggml::cpy(ctx, Vcur, v_cache_view));
+            }
+            break;
+        case VShapeFromCache::HeadSize_Len_Heads_Batch:
+            {
+                const int head_size  = v_hidden_size / num_kv_heads;
+                const int64_t cache_row_size = ggml::row_size(ggml::type_of(v_cache), head_size);
+
+                ggml::tensor * cache_view = ggml::view_4d(ctx, v_cache, head_size, max_length, num_kv_heads, batch,
+                    cache_row_size,
+                    cache_row_size * max_length,
+                    cache_row_size * max_length * num_kv_heads,
+                    0);
+
+                ggml::tensor * v_view = ggml::reshape(ctx, v, head_size, num_kv_heads, qlen, batch);
+                v_view = ggml::permute(ctx, v_view, 0, 2, 1, 3);
+
+                ggml::build_forward_expand(ctx, ggml::set_rows(ctx, cache_view, rt_kv_pos ? rt_kv_pos : pos, v_view));
+            }
+            break;
         }
 
         // save k
         {
             const int head_size  = k_hidden_size / num_kv_heads;
-            const int64_t k_cache_row_size = ggml::row_size(ggml::type_of(k_cache), head_size);
 
-            ggml::tensor * k_cache_view = ggml::view_4d(ctx, k_cache, head_size, num_kv_heads, batch, qlen,
-                k_cache_row_size,
-                k_cache_row_size * num_kv_heads,
-                k_cache_row_size * num_kv_heads * batch,
-                k_cache_row_size * num_kv_heads * batch * n_past);
+            ggml::tensor * k_cache_view = ggml::reshape_3d(ctx, k_cache, head_size * num_kv_heads, max_length, batch);
+            auto k_view = ggml::reshape(ctx, k, k_hidden_size, qlen, batch);
 
-            ggml::tensor * k_view = ggml::permute(ctx, k, 0, 1, 3, 2); // exchange batch & qlen
-
-            ggml::build_forward_expand(ctx, ggml::cpy(ctx, k_view, k_cache_view));
+            ggml::build_forward_expand(ctx, ggml::set_rows(ctx, k_cache_view, rt_kv_pos ? rt_kv_pos : pos, k_view));
         }
-
     }
 
     ggml::tensor *KVCacheAttention::get_k_from_cache(ComputeContext *ctx, const int hidden_size, const int n_past, const int qlen)
@@ -2648,15 +2840,16 @@ namespace chatllm
         ggml::tensor *key_layer = nullptr;
 
         const int head_size  = k_hidden_size / num_kv_heads;
-        const int64_t k_cache_row_size = ggml::row_size(ggml::type_of(k_cache), head_size);
+        const int64_t cache_row_size = ggml::row_size(ggml::type_of(k_cache), head_size);
 
-        key_layer = ggml::view_4d(ctx, k_cache, head_size, num_kv_heads, batch_size, n_past + qlen,
-            k_cache_row_size,
-            k_cache_row_size * num_kv_heads,
-            k_cache_row_size * num_kv_heads * reserved_batch_size,
+        key_layer = ggml::view_4d(ctx, k_cache, head_size, num_kv_heads, n_past + qlen, batch_size,
+            cache_row_size,
+            cache_row_size * num_kv_heads,
+            cache_row_size * num_kv_heads * max_length,
             0);
 
-        key_layer = ggml::permute(ctx, key_layer, 0, 2, 3, 1);                                 // [batch, heads, qlen, head_size]
+        key_layer = ggml::permute(ctx, key_layer, 0, 2, 1, 3);
+
         if (ggml::is_quantized(key_layer))
             key_layer = ggml::cont(ctx, key_layer);
         return key_layer;
@@ -2664,28 +2857,55 @@ namespace chatllm
 
     ggml::tensor *KVCacheAttention::get_v_from_cache(ComputeContext *ctx, const int hidden_size, const int n_past, const int qlen)
     {
-        if (cache_length < 1)
-        {
-            const int head_size = hidden_size / num_attention_heads;
-
-            // [qlen, hidden_size] -> [heads, head_size, qlen]
-            ggml::tensor *r = ggml::reshape_3d(ctx, raw_v, head_size, num_kv_heads, qlen);  // -> [qlen, heads, head_size]
-            r = ggml::permute(ctx, r, 1, 2, 0, 3);   // [heads, head_size, qlen]
-            r = ggml::cont(ctx, r);
-            return r;
-        }
-
         const int max_length = cache_length / reserved_batch_size;
         const int head_size  = v_hidden_size / num_kv_heads;
 
-        ggml::tensor * value_layer = ggml::view_4d(ctx,
-                        v_cache,
-                        n_past + qlen, head_size, num_kv_heads, batch_size,
-                        ggml::element_size(v_cache) * max_length,
-                        ggml::element_size(v_cache) * max_length * head_size,
-                        ggml::element_size(v_cache) * max_length * v_hidden_size,
-                        0); // [batch, heads, head_size, klen]
-        return value_layer;
+        switch (v_shape)
+        {
+        case VShapeFromCache::Len_HeadSize_Heads_Batch:
+            {
+                // expected from v_cache: [batch, heads, head_size, qlen]
+                if (cache_length < 1)
+                {
+                    const int head_size = hidden_size / num_attention_heads;
+
+                    // [qlen, hidden_size] -> [heads, head_size, qlen]
+                    ggml::tensor *r = ggml::reshape_3d(ctx, raw_v, head_size, num_kv_heads, qlen);  // -> [qlen, heads, head_size]
+                    r = ggml::permute(ctx, r, 1, 2, 0, 3);   // [heads, head_size, qlen]
+                    r = ggml::cont(ctx, r);
+                    return r;
+                }
+
+                ggml::tensor * value_layer = ggml::view_4d(ctx,
+                                v_cache,
+                                n_past + qlen, head_size, num_kv_heads, batch_size,
+                                ggml::element_size(v_cache) * max_length,
+                                ggml::element_size(v_cache) * max_length * head_size,
+                                ggml::element_size(v_cache) * max_length * v_hidden_size,
+                                0); // [batch, heads, head_size, klen]
+                return value_layer;
+            }
+            break;
+        case VShapeFromCache::HeadSize_Len_Heads_Batch:
+            {
+                CHATLLM_CHECK(cache_length > 1);
+
+                const int64_t cache_row_size = ggml::row_size(ggml::type_of(v_cache), head_size);
+
+                ggml::tensor * value_layer = ggml::view_4d(ctx,
+                                v_cache,
+                                head_size, n_past + qlen, num_kv_heads, batch_size,
+                                cache_row_size,
+                                cache_row_size * max_length,
+                                cache_row_size * max_length * num_kv_heads,
+                                0);
+                return value_layer;
+            }
+            break;
+        default:
+            CHATLLM_CHECK(false);
+            return nullptr;
+        }
     }
 
     void BaseAttention::set_prec(ggml::prec prec)

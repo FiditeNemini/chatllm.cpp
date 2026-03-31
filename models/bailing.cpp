@@ -156,8 +156,7 @@ namespace chatllm::bailing::moe2
     {
     public:
         SelfAttention(InitContext *ctx, int hidden_size, int num_attention_heads, int num_kv_heads, int head_dim, int max_length):
-            QKNormedRoPEAttention<RMSNormInplace, BaseAttention>(ctx, hidden_size, num_attention_heads, num_kv_heads, head_dim, max_length, false, false),
-            mask(nullptr)
+            QKNormedRoPEAttention<RMSNormInplace, BaseAttention>(ctx, hidden_size, num_attention_heads, num_kv_heads, head_dim, max_length, false, false)
         {
             if (AttnParams::custom_mask)
             {
@@ -184,8 +183,6 @@ namespace chatllm::bailing::moe2
 
             return attn_probs;
         }
-    public:
-        ggml_tensor *mask;
     };
 
     class ConditionalGeneration : public BaseModelForConditionalGeneration

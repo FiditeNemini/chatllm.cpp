@@ -236,7 +236,6 @@ namespace chatllm::alphageo
 
         // output: [heads, qlen, head_size]
         ggml::tensor *get_k_from_cache(ComputeContext *ctx, const int hidden_size, const int n_past, const int qlen) override
-        //ggml::tensor *get_k_from_cachexxx(ComputeContext *ctx, const int hidden_size, const int n_past, const int qlen)
         {
             const int head_size = k_hidden_size / num_kv_heads;
 
@@ -263,9 +262,10 @@ namespace chatllm::alphageo
 
         // output: [heads, head_size, klen]
         ggml::tensor *get_v_from_cache(ComputeContext *ctx, const int hidden_size, const int n_past, const int qlen) override
-        //ggml::tensor *get_v_from_cachexxx(ComputeContext *ctx, const int hidden_size, const int n_past, const int qlen)
         {
             const int head_size = v_hidden_size / num_kv_heads;
+
+            CHATLLM_CHECK(v_shape == VShapeFromCache::Len_HeadSize_Heads_Batch) << "TODO: support other v shape";
 
             ggml::tensor * value_layer = nullptr;
 

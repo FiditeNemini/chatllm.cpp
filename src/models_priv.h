@@ -326,7 +326,7 @@ namespace chatllm
 
         // assign some global parameters
         BlockParams::Optimization::speed = args.opt_speed;
-        BlockParams::FlashAttention::set_mode(args.flash_attention);
+        BlockParams::FlashAttention::push(args.flash_attention);
         BlockParams::set_padded_embedding_num(args.max_proj_length);
 
         load_config<Config>(loader, config, args);

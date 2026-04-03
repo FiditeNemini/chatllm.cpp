@@ -1451,7 +1451,7 @@ namespace chatllm
     int         BlockParams::MoE::experts_per_tok = 0;
     float       BlockParams::Epsilon::rms_norm = 1e-5f;
     bool        BlockParams::Optimization::speed = true;
-    std::string BlockParams::FlashAttention::mode = "0";
+    std::vector<std::string> BlockParams::FlashAttention::mode = {"0"};
 
     void BlockParams::set_padded_embedding_num(int num)
     {
@@ -1485,19 +1485,36 @@ namespace chatllm
     {
         DisableCache::disabled = true;
     }
+
     BlockParams::DisableCache::~DisableCache()
     {
         DisableCache::disabled = false;
     }
 
-    void BlockParams::FlashAttention::set_mode(const std::string &mode)
+    BlockParams::FlashAttention::FlashAttention(const std::string &mode)
     {
-        BlockParams::FlashAttention::mode = mode;
+        push(mode);
+    }
+
+    void BlockParams::FlashAttention::push(const std::string &mode)
+    {
+        BlockParams::FlashAttention::mode.push_back(mode);
     }
 
     bool BlockParams::FlashAttention::is_enabled(void)
     {
-        return (mode == "1") || (mode == "on");
+        const auto &last = mode.back();
+        return (last == "1") || (last == "on");
+    }
+
+    void BlockParams::FlashAttention::pop(void)
+    {
+        mode.pop_back();
+    }
+
+    std::string BlockParams::FlashAttention::get(void)
+    {
+        return mode.back();
     }
 
     bool BlockParams::DisableCache::is_disabled(void)
@@ -2965,6 +2982,154 @@ namespace chatllm
         r = ggml::cont(ctx, r);
         return r;
     }
+
+    BaseBaseSlidingWindowAttentionPartialCache::BaseBaseSlidingWindowAttentionPartialCache(InitContext *ctx, int sliding_window_len, int extra_len,
+        int hidden_size, int num_attention_heads, int num_kv_heads, int max_length, bool qkv_bias, bool o_bias):
+        BaseBaseSlidingWindowAttentionPartialCache(ctx, sliding_window_len, extra_len, hidden_size, num_attention_heads, num_kv_heads, hidden_size / num_attention_heads, max_length, qkv_bias, o_bias)
+    {}
+
+    BaseBaseSlidingWindowAttentionPartialCache::BaseBaseSlidingWindowAttentionPartialCache(InitContext *ctx, int sliding_window_len, int extra_len,
+        int hidden_size, int num_attention_heads, int num_kv_heads, int head_dim, int max_length, bool qkv_bias, bool o_bias):
+        BlockParams::FlashAttention("0"),
+        BaseAttention(ctx, hidden_size, num_attention_heads, num_kv_heads, head_dim, max_length, qkv_bias, o_bias, sliding_window_len + extra_len),
+        sliding_window_len(sliding_window_len), extra_len(extra_len),
+        indices(ggml::new_tensor_1d(ctx, GGML_TYPE_I32, 1)), // to ensure number of tensors are the same
+        cache_offset(0)
+    {
+        BlockParams::FlashAttention::pop();
+    }
+
+    void BaseBaseSlidingWindowAttentionPartialCache::before_forward(ComputeContext *ctx, const int n_past, const int qlen)
+    {
+        if (n_past == 0) cache_offset = 0;
+
+        pos_helper->prepare_pos_tensor(ctx, pos, n_past, qlen);
+
+        // shift cache
+        if (shift_pending.shift > 0)
+        {
+            // do nothing
+            shift_pending.clear();
+        }
+    }
+
+    void BaseBaseSlidingWindowAttentionPartialCache::before_eval(ComputeContext *ctx)
+    {
+
+    }
+
+    void BaseBaseSlidingWindowAttentionPartialCache::save_to_cache(ComputeContext *ctx, const int n_past, const int qlen, ggml::tensor *k, ggml::tensor *v)
+    {
+        CHATLLM_CHECK(qlen == 1)  << "qlen must be 1";
+
+        {
+            const int write_offset = cache_offset + n_past;
+            const int empty = cache_length - write_offset;
+
+            if (empty < qlen)
+            {
+                int remain = sliding_window_len - qlen;
+                int shift = cache_length - remain;
+
+                ggml::tensor * k_cache_remain = ggml::view_1d(ctx, k_cache, remain * k_hidden_size,
+                                            ggml::row_size(k_cache) * shift);
+                ggml::tensor * k_cache_1d = ggml::view_1d(ctx, k_cache, remain * k_hidden_size,
+                                            0);
+
+                ggml::tensor * k_remain_dup = ggml::dup(ctx, k_cache_remain);
+
+                ggml::tensor * v_cache_remain = ggml::view_2d(ctx, v_cache, remain, v_hidden_size,
+                                            cache_length * ggml::element_size(v_cache),
+                                            shift * ggml::element_size(v_cache));
+                ggml::tensor * v_cache_2d =     ggml::view_2d(ctx, v_cache, remain, v_hidden_size,
+                                            cache_length * ggml::element_size(v_cache),
+                                            0);
+
+                ggml::tensor * v_remain_dup = ggml::dup(ctx, v_cache_remain);
+
+                ggml::build_forward_expand(ctx, ggml::cpy(ctx, k_remain_dup, k_cache_1d));
+                ggml::build_forward_expand(ctx, ggml::cpy(ctx, v_remain_dup, v_cache_2d));
+
+                cache_offset -= shift;
+            }
+        }
+
+        // patch n_past for memory estimation
+        const int write_offset = cache_offset + n_past < cache_length ? cache_offset + n_past : cache_length - qlen;
+        if (cache_offset + n_past >= cache_length) cache_offset = 0;
+
+        // compute the transposed [N, n_embd] V matrix
+        ggml::tensor * Vcur = ggml::transpose(ctx, v); // ggml::reshape_2d(ctx, tmpv, kv_hidden_size, qlen));
+
+        ggml::tensor * k_cache_view = ggml::view_1d(ctx, k_cache, qlen * k_hidden_size,
+                                    ggml::row_size(k_cache) * write_offset);
+
+        ggml::tensor * v_cache_view = ggml::view_2d(ctx, v_cache, qlen, v_hidden_size,
+                cache_length * ggml::element_size(v_cache), write_offset * ggml::element_size(v_cache));
+
+        ggml::tensor * k_view = ggml::view_1d(ctx, k, qlen * k_hidden_size, 0);
+
+        // important: storing RoPE-ed version of K in the KV cache!
+        ggml::build_forward_expand(ctx, ggml::cpy(ctx, k_view, k_cache_view));
+        ggml::build_forward_expand(ctx, ggml::cpy(ctx, Vcur, v_cache_view));
+    }
+
+    ggml::tensor *BaseBaseSlidingWindowAttentionPartialCache::get_k_from_cache(ComputeContext *ctx, const int hidden_size, const int n_past, const int qlen)
+    {
+        const int head_size = hidden_size / num_attention_heads;
+        int64_t len = n_past + qlen;
+        if (len > sliding_window_len)
+            len = sliding_window_len;
+        int64_t offset = cache_offset + n_past + qlen - len;
+
+        // patch memory estimation
+        if (offset + len > cache_length)
+            offset = 0;
+
+        CHATLLM_CHECK(offset >= 0) << "offset must >= 0";
+
+        ggml::tensor *key_layer = nullptr;
+
+        key_layer = ggml::view_1d(ctx, k_cache, len * k_hidden_size, offset * ggml::row_size(k_cache));
+        key_layer = ggml::reshape_3d(ctx, key_layer, head_size, num_kv_heads, len);  // [qlen, heads, head_size]
+        key_layer = ggml::permute(ctx, key_layer, 0, 2, 1, 3);                       // [heads, qlen, head_size]
+        if (ggml::is_quantized(key_layer))
+            key_layer = ggml::cont(ctx, key_layer);
+
+        return key_layer;
+    }
+
+    ggml::tensor *BaseBaseSlidingWindowAttentionPartialCache::get_v_from_cache(ComputeContext *ctx, const int hidden_size, const int n_past, const int qlen)
+    {
+        const int head_size = hidden_size / num_attention_heads;
+        int64_t len = n_past + qlen;
+        if (len > sliding_window_len)
+            len = sliding_window_len;
+        int64_t offset = cache_offset + n_past + qlen - len;
+
+        // patch for memory estimation
+        if (offset + len > cache_length)
+            offset = 0;
+
+        if (offset == 1)
+            offset = 1;
+
+        ggml::tensor * value_layer = ggml::view_3d(ctx,
+                        v_cache,
+                        len, head_size, num_kv_heads,
+                        cache_length * ggml::element_size(v_cache),
+                        cache_length * ggml::element_size(v_cache) * head_size,
+                        offset * ggml::element_size(v_cache)); // [heads, head_size, klen]
+
+        // TODO: optimization: re-org the shape of v_cache? or waiting for ggml to support misaligned mul_mat.
+        const int align = ctx->get_backend()->is_cpu() ? 1 : (int)ctx->get_allocator()->get_alignment(BackendBufAllocator::Usage::Matrix);
+        if ((offset * ggml::element_size(v_cache)) % align != 0)
+        {
+            value_layer = ggml::cont(ctx, value_layer);
+        }
+        return value_layer;
+    }
+
 
     ALiBiSelfAttention::ALiBiSelfAttention(InitContext *ctx, int hidden_size, int num_attention_heads, int num_kv_heads, int max_length)
         : BaseAttention(ctx, hidden_size, num_attention_heads, num_kv_heads, max_length, false, false)

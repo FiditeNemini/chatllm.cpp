@@ -5902,6 +5902,12 @@ class QWen3_5Converter(BaseConverter):
         if txt_config.intermediate_size is None:
             txt_config.intermediate_size = -1
 
+        # we can load yarn later
+        if txt_config.rope_parameters['rope_type'] == 'yarn':
+            txt_config.max_position_embeddings = txt_config.rope_parameters['original_max_position_embeddings']
+        if 'partial_rotary_factor' not in txt_config.rope_parameters:
+            txt_config.rope_parameters['partial_rotary_factor'] = 1
+
         def is_la(layer_idx):
             nonlocal txt_config
             if layer_idx >= txt_config.num_hidden_layers: return 0

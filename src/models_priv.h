@@ -235,6 +235,7 @@ namespace chatllm
         MODEL_TYPE_GEMMA4           = MODEL_TYPE_TAG_ChatImageInVideoInAudioIn + 0x00001,
 
         MODEL_TYPE_JANUS_PRO        = MODEL_TYPE_TAG_ChatImageInImageOut + 0x00001,
+        MODEL_TYPE_NEOCHAT          = MODEL_TYPE_TAG_ChatImageInImageOut + 0x00010,
 
         MODEL_TYPE_QWEN3_VL_Embedding       = MODEL_TYPE_TAG_EmbTextImage + 0x00001,
 
@@ -472,6 +473,7 @@ namespace chatllm
         virtual void before_run_model(const int *input_ids, const int ids_count,
                                const GenerationConfig &gen_config,
                                int past);
+        virtual void before_eval_model(ComputeContext *ctx);
         virtual bool run_model(const int *input_ids, const int ids_count,
                                const GenerationConfig &gen_config,
                                int past,

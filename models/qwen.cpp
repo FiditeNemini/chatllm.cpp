@@ -1903,7 +1903,7 @@ namespace chatllm::qwen::v3
     typedef QWen3MoEBlock<128, 8> QWen3MoEBlock128_8;
 
     ConditionalGeneration::ConditionalGeneration(const Config &config, const RuntimeConfig &runtime_config, ModelType type, const bool skip_lm_head, int extra_tensors,
-        const int vocab_size, const int hidden_size)
+        const int vocab_size, const int hidden_size, std::function<Block *(InitContext *, int)> create_layer, int added_tensors)
         : BaseModelForConditionalGeneration(type, config, runtime_config, 4096 * 4),
         config(config)
     {
@@ -1912,7 +1912,7 @@ namespace chatllm::qwen::v3
         const size_t num_tensors = 3 + (skip_lm_head || config.tie_word_embeddings ? -1 : 0)
                                     + (config.num_hidden_layers - sparse_layers) * 14
                                     + sparse_layers * (14 + 1)
-                                    + extra_tensors;
+                                    + extra_tensors + added_tensors;
         const size_t ctx_size = num_tensors * tensor_ovhd;
         w_ctx_.gctx = GGMLContext({.mem_size = ctx_size, .mem_buffer = nullptr, .no_alloc = true});
         w_ctx_.dtype = config.dtype;
@@ -1923,9 +1923,7 @@ namespace chatllm::qwen::v3
                 vocab_size <= 0 ? create_embedding<Embedding>(&w_ctx_, config) : create_embedding<Embedding>(&w_ctx_, vocab_size, hidden_size),
                 create_final_norm<RMSNorm>(&w_ctx_, config),
                 nullptr,
-                [&](InitContext *ctx, int layer_index) {
-                    return create_layer(ctx, layer_index);
-                });
+                create_layer);
         }
         else
         {
@@ -1933,9 +1931,7 @@ namespace chatllm::qwen::v3
                 vocab_size <= 0 ? create_embedding<Embedding>(&w_ctx_, config) : create_embedding<Embedding>(&w_ctx_, vocab_size, hidden_size),
                 create_final_norm<RMSNorm>(&w_ctx_, config),
                 create_lm_head(&w_ctx_, config, false),
-                [&](InitContext *ctx, int layer_index) {
-                    return create_layer(ctx, layer_index);
-                });
+                create_layer);
         }
 
         if (config.yarn_scaling_factor > 0.0)
@@ -1959,18 +1955,7 @@ namespace chatllm::qwen::v3
         w_ctx_.check_used_mem_size(true, extra_tensors);
     }
 
-    int ConditionalGeneration::get_sparse_layer_num()
-    {
-        int num = 0;
-        for (int i = 0; i < config.num_hidden_layers; i++)
-        {
-            if (config.layer_is_sparse[i])
-                num++;
-        }
-        return num;
-    }
-
-    Block *ConditionalGeneration::create_layer(InitContext *ctx, int layer_index)
+    static Block *create_layer(const Config &config, InitContext *ctx, int layer_index)
     {
         if (config.layer_is_sparse[layer_index])
         {
@@ -1992,6 +1977,27 @@ namespace chatllm::qwen::v3
                 config.intermediate_size,
                 config.num_key_value_heads, config.head_dim, config.max_length);
         }
+    }
+
+    ConditionalGeneration::ConditionalGeneration(const Config &config, const RuntimeConfig &runtime_config, ModelType type, const bool skip_lm_head, int extra_tensors,
+        const int vocab_size, const int hidden_size):
+        ConditionalGeneration(config, runtime_config, type, skip_lm_head, extra_tensors, vocab_size, hidden_size,
+            [&](InitContext *ctx, int layer_index) {
+                return create_layer(config, ctx, layer_index);
+            },
+            0)
+    {
+    }
+
+    int ConditionalGeneration::get_sparse_layer_num()
+    {
+        int num = 0;
+        for (int i = 0; i < config.num_hidden_layers; i++)
+        {
+            if (config.layer_is_sparse[i])
+                num++;
+        }
+        return num;
     }
 }
 

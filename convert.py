@@ -292,6 +292,7 @@ class ModelType(Enum):
     MiniCPM_O               = ModelTypeTagChatImageVideoAudioInAudioOut + 0x0000001
 
     JanusPro                = ModelTypeTagChatImageInImageOut + 0x0000001
+    NEOChat                 = ModelTypeTagChatImageInImageOut + 0x0000010
 
     QWen3_VL_Embedding      = ModelTypeTagEmbTextImage + 0x00001
 
@@ -10401,6 +10402,78 @@ class PaddleOCRVLConverter(BaseConverter):
 
         return weight_names
 
+class NEOChatConverter(BaseConverter):
+    MODEL_TYPE = ModelType.NEOChat
+
+    @classmethod
+    def state_dict_pp(cls, config, state_dict):
+        r = {}
+        for name in state_dict:
+            tensor: torch.Tensor = state_dict[name]
+            new_name: str = name
+            if new_name.startswith('language_model.'):
+                new_name = new_name.replace('language_model.', '')
+            elif new_name.startswith('vision_model.'):
+                new_name = new_name.replace('vision_model.', 'vision.')
+
+            r[new_name] = tensor
+
+        return r
+
+    @staticmethod
+    def dump_config(f, config, ggml_type):
+        NEOChatConverter.txt_config = AttributeDict(config.llm_config)
+        NEOChatConverter.vis_config = AttributeDict(config.vision_config)
+        assert NEOChatConverter.txt_config.architectures[0] in ['Qwen3ForCausalLM', 'Qwen3MoeForCausalLM']
+
+        QWen3Converter.dump_config(f, NEOChatConverter.txt_config, ggml_type)
+
+    @staticmethod
+    def get_weight_names(config):
+        weight_names = [
+            "fm_modules.fm_head.0.bias",
+            "fm_modules.fm_head.0.weight",
+            "fm_modules.fm_head.2.bias",
+            "fm_modules.fm_head.2.weight",
+            "fm_modules.noise_scale_embedder.mlp.0.bias",
+            "fm_modules.noise_scale_embedder.mlp.0.weight",
+            "fm_modules.noise_scale_embedder.mlp.2.bias",
+            "fm_modules.noise_scale_embedder.mlp.2.weight",
+            "fm_modules.timestep_embedder.mlp.0.bias",
+            "fm_modules.timestep_embedder.mlp.0.weight",
+            "fm_modules.timestep_embedder.mlp.2.bias",
+            "fm_modules.timestep_embedder.mlp.2.weight",
+            "fm_modules.vision_model_mot_gen.embeddings.dense_embedding.bias",
+            "fm_modules.vision_model_mot_gen.embeddings.dense_embedding.weight",
+            "fm_modules.vision_model_mot_gen.embeddings.patch_embedding.bias",
+            "fm_modules.vision_model_mot_gen.embeddings.patch_embedding.weight",
+        ]
+
+        llm_weights = QWen3Converter.get_weight_names(NEOChatConverter.txt_config)
+        weight_names += llm_weights
+        for n in llm_weights:
+            if '_layernorm.' in n:
+                weight_names.append(n.replace('_layernorm.', '_layernorm_mot_gen.'))
+            elif '.mlp.' in n:
+                weight_names.append(n.replace('.mlp.', '.mlp_mot_gen.'))
+            elif '.self_attn.' in n:
+                if '_norm.' in n:
+                    weight_names.append(n.replace('_norm.', '_norm_hw.'))
+                    weight_names.append(n.replace('_norm.', '_norm_hw_mot_gen.'))
+                    weight_names.append(n.replace('_norm.', '_norm_mot_gen.'))
+                elif '_proj.' in n:
+                    weight_names.append(n.replace('_proj.', '_proj_mot_gen.'))
+
+        weight_names += [
+            "model.norm_mot_gen.weight",
+            "vision.embeddings.dense_embedding.bias",
+            "vision.embeddings.dense_embedding.weight",
+            "vision.embeddings.patch_embedding.bias",
+            "vision.embeddings.patch_embedding.weight",
+        ]
+
+        return weight_names
+
 def convert_grok_1_base(args, vocab, ggml_type):
     def ffn_size(emb_size, widening_factor):
         _ffn_size = int(widening_factor * emb_size) * 2 // 3
@@ -11089,6 +11162,8 @@ def main():
         PaddleOCRVLConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
     elif arch == 'MellumForCausalLM':
         MellumConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
+    elif arch == 'NEOChatModel':
+        NEOChatConverter.convert(config, model_files, vocab, ggml_type, args.save_path)
     elif arch == 'deepseek-r1-distill-qwen3':
         QWen3Converter.MODEL_TYPE = ModelType.DeepSeek_R1_Distill_QWen3
         QWen3Converter.convert(config, model_files, vocab, ggml_type, args.save_path)

@@ -782,10 +782,12 @@ namespace chatllm::qwen
                 ModelType type = ModelType::MODEL_TYPE_QWEN3, const bool skip_lm_head = false, int extra_tensors = 0,
                 const int vocab_size = -1, const int hidden_size = -1);
 
-        private:
-            int get_sparse_layer_num();
+        public:
+            ConditionalGeneration(const Config &config, const RuntimeConfig &runtime_config, ModelType type, const bool skip_lm_head, int extra_tensors,
+                const int vocab_size, const int hidden_size, std::function<Block *(InitContext *, int)> create_layer, int added_tensors);
 
-            Block *create_layer(InitContext *ctx, int layer_index);
+        protected:
+            int get_sparse_layer_num();
 
         public:
             const Config config;

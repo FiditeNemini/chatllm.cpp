@@ -1241,6 +1241,11 @@ namespace chatllm
                                int past)
     {}
 
+    void BaseModelForConditionalGeneration::before_eval_model(ComputeContext *ctx)
+    {
+        transformer->before_eval(ctx);
+    }
+
     bool BaseModelForConditionalGeneration::run_model(const int *input_ids, const int ids_count,
                             const GenerationConfig &gen_config,
                             int past,
@@ -1301,7 +1306,7 @@ namespace chatllm
             exit(-1);
         }
 
-        transformer->before_eval(&ctx);
+        before_eval_model(&ctx);
         ctx.compute();
 
         Backend::read_tensor_data(r, output.data());

@@ -183,6 +183,10 @@ namespace chatllm
                                             int   n_dims, int n_ctx_orig,
                                             float freq_base, float freq_scale, float ext_factor,
                                             float attn_factor, float beta_fast, float beta_slow);
+        ggml::tensor *rope_2d(ComputeContext *ctx, ggml::tensor *a, ggml::tensor *pos, ggml::tensor *freq_factors,
+                                            int   n_dims, int n_ctx_orig,
+                                            float freq_base, float freq_scale, float ext_factor,
+                                            float attn_factor, float beta_fast, float beta_slow, bool mode_original = true);
 
         ggml::tensor *soft_max(ComputeContext *ctx, ggml::tensor *a);
         ggml::tensor *soft_max_inplace(ComputeContext *ctx, ggml::tensor *a);

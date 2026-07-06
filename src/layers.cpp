@@ -980,7 +980,7 @@ namespace chatllm
         const int qlen      = (int)ggml::get_dim(hidden, 2);
         const int b         = (int)ggml::get_dim(hidden, 3);
 
-        CHATLLM_CHECK(n_dims = head_size) << "TODO";
+        CHATLLM_CHECK(n_dims == head_size) << "TODO";
 
         auto pos_w = ggml::view_1d(ctx, pos, qlen, 0);
         auto pos_h = ggml::view_1d(ctx, pos, qlen, qlen * ggml::element_size(pos));
@@ -1004,6 +1004,45 @@ namespace chatllm
         auto r2 = ggml::rope_ext_inplace(ctx, part, pos_h, freq_factors, n_dims / 2, RoPEMode::Original, n_ctx_orig,
                         freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow);
         ggml::build_forward_expand(ctx, r2);
+
+        return hidden;
+    }
+
+    ggml::tensor *ggml::rope_2d(ComputeContext *ctx, ggml::tensor *hidden, ggml::tensor *pos, ggml::tensor *freq_factors,
+                                            int   n_dims, int n_ctx_orig,
+                                            float freq_base, float freq_scale, float ext_factor,
+                                            float attn_factor, float beta_fast, float beta_slow, bool mode_original)
+    {
+        const int head_size = (int)ggml::get_dim(hidden, 0);
+        const int heads     = (int)ggml::get_dim(hidden, 1);
+        const int qlen      = (int)ggml::get_dim(hidden, 2);
+        const int b         = (int)ggml::get_dim(hidden, 3);
+        const auto mode     = mode_original ? RoPEMode::Original : RoPEMode::Interleaved;
+
+        CHATLLM_CHECK(n_dims == head_size) << "TODO";
+
+        auto pos_w = ggml::view_1d(ctx, pos, qlen, 0);
+        auto pos_h = ggml::view_1d(ctx, pos, qlen, qlen * ggml::element_size(pos));
+
+        // for mis-aligned access
+        pos_h = ggml::dup(ctx, pos_h);
+
+        ggml::tensor *part = ggml::view_4d(ctx, hidden, head_size / 2, heads, qlen, b,
+                            ggml::row_size(hidden),
+                            ggml::row_size(hidden) * heads,
+                            ggml::row_size(hidden) * heads * qlen, 0);
+        auto r1 = ggml::rope_ext(ctx, part, pos_w, freq_factors, n_dims / 2, mode, n_ctx_orig,
+                        freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow);
+
+        part = ggml::view_4d(ctx, hidden, head_size / 2, heads, qlen, b,
+                            ggml::row_size(hidden),
+                            ggml::row_size(hidden) * heads,
+                            ggml::row_size(hidden) * heads * qlen,
+                            ggml::element_size(hidden) * (head_size / 2));
+        auto r2 = ggml::rope_ext(ctx, part, pos_h, freq_factors, n_dims / 2, mode, n_ctx_orig,
+                        freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow);
+
+        hidden = ggml::concat(ctx, r1, r2, 0);
 
         return hidden;
     }

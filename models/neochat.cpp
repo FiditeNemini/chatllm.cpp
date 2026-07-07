@@ -883,7 +883,7 @@ namespace chatllm::neochat
     private:
         typedef LMBlock1<RMSNorm, BaseNeoAttention, RMSNorm, MLPBlock> Base;
     public:
-        using Base::LMBlock1;
+        using LMBlock1<RMSNorm, BaseNeoAttention, RMSNorm, MLPBlock>::LMBlock1;
 
         ggml::tensor *forward(ComputeContext *ctx, ggml::tensor *hidden_states, ggml::tensor *image_gen_id_pos, ggml::tensor *non_image_id_pos,
             int n_past)
@@ -902,7 +902,7 @@ namespace chatllm::neochat
     };
 
     DenseBlock::DenseBlock(InitContext *ctx, int hidden_size, int num_attention_heads, int intermediate_size, int num_kv_heads, int head_dim, int max_length)
-        : LayerBlock(ctx, hidden_size, num_attention_heads, intermediate_size, num_kv_heads, head_dim, max_length)
+        : LayerBlock<SiLUMLP>(ctx, hidden_size, num_attention_heads, intermediate_size, num_kv_heads, head_dim, max_length)
     {}
 
     template <int NUM_EXPERTS, int EXPERTS_PER_TOK> class SparseMoE : public BaseSparseMLP

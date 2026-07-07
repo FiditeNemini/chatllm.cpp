@@ -925,7 +925,6 @@ namespace chatllm
         }
 
         int round_idx = msg.round;
-        size_t num = ids.size();
 
         switch (msg.role)
         {

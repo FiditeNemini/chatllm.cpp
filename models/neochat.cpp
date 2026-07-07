@@ -1,4 +1,5 @@
 #include "qwen.h"
+#include <cstring>
 #include "../src/vision_process.h"
 
 namespace chatllm::neochat::vit
@@ -77,7 +78,7 @@ namespace chatllm::neochat::vit
         std::vector<float> v_freqs(half);
         for (int i = 0; i < half; i++)
         {
-            v_freqs[i] = std::expf(-std::logf(max_period) * i / half);
+            v_freqs[i] = (float)expf(-logf(max_period) * i / half);
         }
         Backend::write_tensor_data(freqs, v_freqs.data());
     }
@@ -179,7 +180,6 @@ namespace chatllm::neochat::vit
             const float beta_slow(0.0f);
             const int   rope_dim(hidden_size);
             const int   n_original_ctx(0);
-            const float use_rope(true);
             patch_embeds = ggml::rope_2d(ctx, patch_embeds, rt_pos, nullptr, rope_dim, n_original_ctx,
                 rope_theta, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow, false);
         }
@@ -1411,7 +1411,6 @@ namespace chatllm::neochat
             ggml::tensor *hidden_states = transformer->word_embeddings->forward(&ctx, input_ids_tensor);
             for (int i = 0; i < transformer->get_layer_num(); i++)
             {
-                auto layer = transformer->get_layer(i);
                 ctx.move_to_layer(i);
 
                 hidden_states = layer_forward_funcs[i](&ctx, hidden_states, nullptr, nullptr, n_past);

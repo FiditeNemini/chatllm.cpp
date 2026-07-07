@@ -2227,6 +2227,7 @@ namespace chatllm::hunyuan::v3
         }
 
         CHATLLM_CHECK(false) << "unsupport MoE param";
+        return nullptr;
     }
 
     void ConditionalGeneration::load(ModelLoader &loader)

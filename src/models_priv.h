@@ -288,6 +288,8 @@ namespace chatllm
         return tokenizer;
     }
 
+    void load_tensors_only(ModelLoader &loader);
+
     template <class Config, class ConditionalGeneration>
     ConditionalGeneration *load_model(ModelLoader &loader, Config &config, const ModelObject::extra_args &args)
     {
@@ -312,6 +314,24 @@ namespace chatllm
         loader.push_allocator_manager(model->get_alloc_manager());
         model->load_more(loader.meta_json);
         model->load(loader);
+
+        if (args.lens_type.size() > 0)
+        {
+            ModelLoader *l = nullptr;
+            std::vector<int> lens_layers_ids;
+            utils::parse_int_lists(lens_layers_ids, args.lens_layers, config.num_hidden_layers);
+
+            if (args.lens_fn.size() > 0)
+            {
+                ModelLoader loader(args.lens_fn);
+                load_tensors_only(loader);
+                model->load_lens(&loader, args.lens_type, lens_layers_ids);
+            }
+            else
+            {
+                model->load_lens(nullptr, args.lens_type, lens_layers_ids);
+            }
+        }
 
         return model;
     }
@@ -454,6 +474,9 @@ namespace chatllm
         LayerAllocatorManager *get_alloc_manager(void) override;
 
         void load(ModelLoader &loader) override;
+        void load_lens(ModelLoader *loader, const std::string &type, const std::vector<int> &layer_ids) override;
+
+        void set_lens_callback(f_lens_callback callback, void *user_data) override;
 
     protected:
         virtual void before_generate(const GenerationConfig &gen_config);

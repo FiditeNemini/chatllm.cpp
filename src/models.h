@@ -84,6 +84,11 @@ namespace chatllm
         int load_session(ModelSessionMemory &session) override;
         void load(const std::string &path, TensorLoader *loader, const std::vector<int> &layer_ids) override;
 
+        virtual void load_lens(ModelLoader *loader, const std::string &type, const std::vector<int> &layer_ids);
+        void set_lens_callback(AbstractModel::f_lens_callback callback, void *user_data);
+        bool need_observe_tensor_evaluation(ggml::tensor *tensor);
+        bool observe_tensor_evaluation(ggml::tensor *tensor);
+
         void reserve_batch_size(int size) override;
     private:
         struct state
@@ -92,6 +97,10 @@ namespace chatllm
         };
     protected:
         virtual int64_t get_param_num_of_layers(bool effective_only) const;
+
+        virtual void prepare_for_lens(ComputeContext *ctx);
+        virtual void attach_lens(ComputeContext *ctx, ggml::tensor *hidden_states, int layer_id);
+        void inspect_tensor(ComputeContext *ctx, ggml::tensor *tensor, ggml::type dtype, const char *format, ...);
 
     public:
         const int num_hidden_layers;
@@ -103,11 +112,23 @@ namespace chatllm
         ggml::tensor *last_hidden_state = nullptr;
         std::function<ggml::tensor *(ComputeContext *ctx, ggml::tensor *input_ids)> custom_embedding;
     protected:
+        InitContext *init_ctx = nullptr;
         // std::vector<std::unique_ptr<Block>> layers;
         std::vector<Block *> layers;
         size_t cache_size;
         std::unique_ptr<ModelFinalSteps> final_steps;
         std::unique_ptr<ModelLayerInputPreprocess> layer_preprocess;
+
+        int n_vocab = -1;
+        std::unique_ptr<InitContext> lens_ctx;
+        std::vector<std::unique_ptr<Block>> lens;
+        std::vector<Block *> lens_layers;
+        AbstractModel::f_lens_callback lens_callback = nullptr;
+        void *lens_user_data = nullptr;
+        std::vector<float> lens_tokens_logits;  // n_vocab * num_hidden_layers
+        std::vector<int>   lens_tokens_order;
+
+        std::unordered_map<ggml::tensor *, std::string> observed_set;
     };
 
     class LMFinalStepsDisabler;

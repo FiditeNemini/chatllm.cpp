@@ -55,6 +55,7 @@ enum PrintType
 
 typedef void (*f_chatllm_print)(void *user_data, int print_type, const char *utf8_str);
 typedef void (*f_chatllm_end)(void *user_data);
+typedef void (*f_chatllm_lens_callback)(void *user_data, int layer_id, int n_tokens, const float *logits, const int *ordering);
 
 /**
  * @brief append an initialization command line option (optional)
@@ -468,6 +469,45 @@ DLL_DECL int chatllm_async_embedding(struct chatllm_obj *obj, const char *utf8_s
  * @return                      0 if started else -1
  */
 DLL_DECL int chatllm_async_qa_rank(struct chatllm_obj *obj, const char *utf8_str_q, const char *utf8_str_a);
+
+/**
+ * C-friendly API
+ */
+
+/**
+ * @brief get token dictionary
+ *
+ * All tokens are 0 padded to (maximum length + 1).
+ *
+ * The returned data is available until the `obj` is destroyed.
+ *
+ * @param[in]  obj              model object
+ * @param[out] n_vocab          number of tokens
+ * @param[out] width            max number of chars of one token + 1
+ * @return                      pointing to the start of the dict
+ */
+DLL_DECL const char *chatllm_get_token_vocab(struct chatllm_obj *obj, int *n_vocab, int *width);
+
+/**
+ * @brief set lens callback
+ *
+ * @param[in]  obj              model object
+ * @param[in]  f_callback       callback
+ * @param[in]  user_data        user data
+ */
+DLL_DECL void chatllm_set_lens_callback(struct chatllm_obj *obj, f_chatllm_lens_callback f_callback, void *user_data);
+
+/**
+ * @brief get basic info about a model
+ *
+ * Equiv. to `--show`.
+ *
+ * The returned data is available until a new call of this function.
+ *
+ * @param[in]  model_path       a model file
+ * @return                      pointing to a string
+ */
+DLL_DECL const char *chatllm_inspect_model(const char *model_path);
 
 #ifdef __cplusplus
 }

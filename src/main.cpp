@@ -59,6 +59,9 @@ struct Args
     std::string multimedia_file_tags[2] = {"", ""};
     std::string tts_export;
     std::string re_quantize;
+    std::string lens_type;
+    std::string lens_layers;
+    std::string lens_fn;
     std::map<std::string, std::string> model_n_gpu_layers;
     std::set<std::string> dump_tensors;
     int max_length = -1;
@@ -262,6 +265,11 @@ void usage(const std::string &prog)
               << "  --save_session N FILE   save session to FILE after N round(s) of chatting (N >= 0) and quit                         [*]\n"
               << "                          when N = 0, system prompt is evaluated.\n"
               << "  --load_session FILE     load session from FILE                                                                      [*]\n"
+              << "Lens:\n"
+              << "  --lens identity LAYERS  turn on lens on layer outputs (vanilla logit-lens)\n"
+              << "  --lens linear   LAYERS FN\n"
+              << "                          turn on lens on layer outputs using Linear mapping (lens.[id].weights from file FN)\n"
+              << "                          LAYERS can be `all`. see `--layer_spec` for more.\n"
               << "Misc:\n"
               << "  --init_vs FILE          init vector store file from input                                                           [*]\n"
               << "  --merge_vs FILE         merge multiple vector store files into a single one                                         [*]\n"
@@ -465,6 +473,21 @@ static size_t parse_args(Args &args, const std::vector<std::string> &argv)
                 {
                     args.dump_tensors.emplace(argv[c]);
                 }
+            }
+            else if (utils::is_same_command_option(arg, "--lens"))
+            {
+                c++;
+                if (c + 1 >= argc) break;
+
+                args.lens_type   = utils::to_lower(argv[c + 0]);
+                args.lens_layers = argv[c + 1];
+                if (args.lens_type != "identity")
+                {
+                    c++;
+                    if (c + 1 >= argc) break;
+                    args.lens_fn = argv[c + 1];
+                }
+                c++;
             }
             handle_param("--model",                 "-m", model_path,           std::string)
             handle_param("--prompt",                "-p", prompt,               std::string)
@@ -935,7 +958,8 @@ static void run_qa_ranker(Args &args, chatllm::Pipeline &pipeline, TextStreamer 
     pipe_args.additional = args.additional; \
     pipe_args.opt_speed = args.opt_speed;   \
     pipe_args.flash_attention = args.flash_attention;   \
-    pipe_args.max_proj_length = args.max_proj_length;
+    pipe_args.max_proj_length = args.max_proj_length;   \
+    pipe_args.lens_type = args.lens_type; pipe_args.lens_layers = args.lens_layers; pipe_args.lens_fn = args.lens_fn;
 
 chatllm::BaseStreamer *get_streamer_for_log(void);
 
@@ -961,6 +985,18 @@ void log_internal(int level, const char * text)
 static void _ggml_log_callback(enum ggml_log_level level, const char * text, void * user_data)
 {
     log_internal(level, text);
+}
+
+static void _lens_callback(void *user_data, int layer_id, int n_tokens, const float *logits, const int *ordering)
+{
+    const int n = 5;
+    chatllm::Pipeline *pipeline = reinterpret_cast<chatllm::Pipeline *>(user_data);
+    printf("top-%d tokens on layer %d:\n", n, layer_id);
+    for (int i = 0; i < n; i++)
+    {
+        printf("\t%2d: %6d (%+2.8f): %s\n", i, ordering[i], logits[ordering[i]], pipeline->tokenizer->decode({ordering[i]}).c_str());
+    }
+    printf("\n");
 }
 
 void chat(Args &args, chatllm::Pipeline &pipeline, TextStreamer &streamer)
@@ -1040,6 +1076,11 @@ void chat(Args &args, chatllm::Pipeline &pipeline, TextStreamer &streamer)
     {
         run_file(args, pipeline, streamer, gen_config);
         return;
+    }
+
+    if (args.lens_type.size() > 0)
+    {
+        pipeline.model->set_lens_callback(_lens_callback, &pipeline);
     }
 
     if (!args.interactive)
@@ -1531,6 +1572,9 @@ public:
     bool is_rag;
     bool is_async_busy;
     int async_result_int;
+
+    f_chatllm_lens_callback lens_callback = nullptr;
+    void *lens_user_data = nullptr;
 };
 
 class FFIStreamer : public chatllm::BaseStreamer
@@ -2226,6 +2270,38 @@ int  chatllm_load_session(struct chatllm_obj *obj, const char *utf8_str)
     if (0 == r)
         chat->sess_hist_len = (int)chat->history.size();
     return r;
+}
+
+const char *chatllm_get_token_vocab(struct chatllm_obj *obj, int *n_vocab, int *width)
+{
+    DEF_CHAT();
+    return chat->pipeline->tokenizer->get_token_vocab(n_vocab, width);
+}
+
+static void _lib_lens_callback(void *user_data, int layer_id, int n_tokens, const float *logits, const int *ordering)
+{
+    void *obj = user_data;
+    DEF_CHAT();
+    chat->lens_callback(chat->lens_user_data, layer_id, n_tokens, logits, ordering);
+}
+
+void chatllm_set_lens_callback(struct chatllm_obj *obj, f_chatllm_lens_callback f_callback, void *user_data)
+{
+    DEF_CHAT();
+    chat->lens_callback = f_callback;
+    chat->lens_user_data = user_data;
+    chat->pipeline->model->set_lens_callback(_lib_lens_callback, obj);
+}
+
+const char *chatllm_inspect_model(const char *model_path)
+{
+    static std::string info;
+    std::ostringstream oss;
+    chatllm::ModelLoader loader(model_path);
+    oss << chatllm::ModelFactory::load_info(loader) << std::endl << std::endl;
+    oss << "Tensors:" << std::endl << chatllm::ModelFactory::show_tensors(loader) << std::endl;
+    info = oss.str();
+    return info.data();
 }
 
 #endif

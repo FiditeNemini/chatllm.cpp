@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <sstream>
 #include <map>
+#include <cstdarg>
 
 #if defined(_WIN32)
 #define strcasecmp stricmp
@@ -105,6 +106,9 @@ namespace utils
     int parse_int_lists(std::vector<int> &values, const std::string &s, int num_elements);
 
     std::string detect_language(const std::string &s);
+
+    std::string sprintf(const char *format, ...);
+    std::string sprintf(const char *format, va_list args);
 
     //#define TIME_STAMP (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 }

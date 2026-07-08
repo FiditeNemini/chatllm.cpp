@@ -787,6 +787,13 @@ namespace utils
 
     int parse_int_lists(std::vector<int> &values, const std::string &s, int num_elements)
     {
+        if (s == "all")
+        {
+            for (int i = 0; i < num_elements; i++)
+                values.push_back(i);
+            return 0;
+        }
+
         const static std::regex r(R""([\r\n]+)"");
         std::string t(s);
         while (t.size() > 0)
@@ -875,5 +882,29 @@ namespace utils
         {
             nomial(p_dist, indices, dist_dim, num_samples, replacement, rand);
         }
+    }
+
+    std::string sprintf(const char *format, ...)
+    {
+        va_list args;
+        va_start(args, format);
+        std::string r = sprintf(format, args);
+        va_end(args);
+        return r;
+    }
+
+    std::string sprintf(const char *format, va_list args)
+    {
+        int size = vsnprintf(nullptr, 0, format, args) + 1; // +1 for the null terminator
+
+        if (size > 0)
+        {
+            std::unique_ptr<char[]> buffer(new char[size]);
+            vsnprintf(buffer.get(), size, format, args);
+
+            return buffer.get();
+        }
+
+        return "";
     }
 }

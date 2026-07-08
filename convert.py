@@ -1,5 +1,5 @@
 """
-Convert Hugging Face models to GGML format
+Convert Hugging Face models to GGMM format
 """
 import argparse
 from ast import Dict, Tuple

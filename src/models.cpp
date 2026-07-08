@@ -217,25 +217,10 @@ namespace chatllm
             ggml::build_forward_expand(dbg_ctx, tensor);
         }
 
-        std::string tag;
-
         va_list args;
         va_start(args, format);
-        int size = vsnprintf(nullptr, 0, format, args) + 1; // +1 for the null terminator
+        std::string tag = utils::sprintf(format, args);
         va_end(args);
-
-        if (size > 0)
-        {
-            std::unique_ptr<char[]> buffer(new char[size]);
-
-            va_start(args, format);
-            vsnprintf(buffer.get(), size, format, args);
-            va_end(args);
-
-            tag = buffer.get();
-        }
-
-        // if (strstr(tag.c_str(), "gen_vision_model.decoder.mid.0") == nullptr) return;
 
         inspected_set[tensor] = tag;
 
@@ -1178,6 +1163,16 @@ namespace chatllm
         return &backend_context.layer_allocators;
     }
 
+    void BaseModelForConditionalGeneration::set_lens_callback(f_lens_callback callback, void *user_data)
+    {
+        transformer->set_lens_callback(callback, user_data);
+    }
+
+    void BaseModelForConditionalGeneration::load_lens(ModelLoader *loader, const std::string &type, const std::vector<int> &layer_ids)
+    {
+        transformer->load_lens(loader, type, layer_ids);
+    }
+
     void BaseModelForConditionalGeneration::load(ModelLoader &loader)
     {
         transformer->load("model.", &loader, layer_ids);
@@ -1351,6 +1346,20 @@ namespace chatllm
         return true;
     }
 
+    static bool model_need_observe_tensor_evaluation_callback(ggml::tensor *tensor, void *user_data)
+    {
+        auto model = reinterpret_cast<HeterogeneousModel *>(user_data);
+
+        return model->need_observe_tensor_evaluation(tensor);
+    }
+
+    static bool model_observe_tensor_evaluation_callback(ggml::tensor *tensor, void *user_data)
+    {
+        auto model = reinterpret_cast<HeterogeneousModel *>(user_data);
+
+        return model->observe_tensor_evaluation(tensor);
+    }
+
     HeterogeneousModel::HeterogeneousModel(InitContext *ctx, int num_hidden_layers, int hidden_size,
         Block *word_embeddings, Block *final_layernorm,
         Block *lm_head, std::function<Block *(InitContext *, int)> create_layer)
@@ -1362,6 +1371,7 @@ namespace chatllm
         cache_size(0),
         final_steps(std::make_unique<LMFinalSteps>())
     {
+        init_ctx = ctx;
         layers.reserve(num_hidden_layers);
         for (int layer_id = 0; layer_id < num_hidden_layers; layer_id++)
         {
@@ -1389,6 +1399,7 @@ namespace chatllm
     ggml::tensor *HeterogeneousModel::forward(ComputeContext *ctx, ggml::tensor *input_ids, int n_past)
     {
         before_forward(ctx, input_ids, n_past);
+        prepare_for_lens(ctx);
 
         ctx->move_to_layer(LayerAllocatorManager::Prolog);
         ggml::tensor *hidden_states = custom_embedding ? custom_embedding(ctx, input_ids) :  word_embeddings->forward(ctx, input_ids);
@@ -1402,6 +1413,8 @@ namespace chatllm
             }
 
             hidden_states = layer->forward(ctx, hidden_states, n_past);
+
+            attach_lens(ctx, hidden_states, layer->get_id());
         }
 
         last_hidden_state = hidden_states;
@@ -1560,6 +1573,149 @@ namespace chatllm
             std::string layer_prefix = path + "layers." + std::to_string(layer_ids[i]) + '.';
             layers[i]->load(layer_prefix, loader);
         }
+    }
+
+    void HeterogeneousModel::load_lens(ModelLoader *loader, const std::string &type, const std::vector<int> &layer_ids)
+    {
+        lens_layers.resize(num_hidden_layers);
+        if (type == "linear")
+        {
+            lens_ctx.reset(new InitContext(init_ctx));
+            const size_t tensor_ovhd = ggml_tensor_overhead();
+            const size_t num_tensors = layer_ids.size() * 1;
+            const size_t ctx_size = num_tensors * tensor_ovhd;
+            lens_ctx->gctx = GGMLContext({.mem_size = ctx_size, .mem_buffer = nullptr, .no_alloc = true});
+
+            loader->push_allocator_manager(&lens_ctx->get_backend_context()->layer_allocators);
+            for (auto i : layer_ids)
+            {
+                lens_ctx->move_to_layer(i);
+                std::string name = "lens." + std::to_string(layer_ids[i]) + ".";
+                if (!loader->has_tensor(name + "weight")) continue;
+
+                auto b = new Linear(lens_ctx.get(), hidden_size, hidden_size, false);
+                b->load(name, loader);
+
+                lens.emplace_back(b);
+                lens_layers[i] = b;
+            }
+            loader->pop_allocator_manager();
+        }
+        else if (type == "identity")
+        {
+            for (auto i : layer_ids)
+            {
+                auto b = new Identity();
+                lens.emplace_back(b);
+                lens_layers[i] = b;
+            }
+        }
+        else
+        {
+            CHATLLM_CHECK(false) << "unknown lens type: " << type;
+        }
+    }
+
+    void HeterogeneousModel::set_lens_callback(AbstractModel::f_lens_callback callback, void *user_data)
+    {
+        lens_callback = callback;
+        lens_user_data = user_data;
+    }
+
+    void HeterogeneousModel::prepare_for_lens(ComputeContext *ctx)
+    {
+        observed_set.clear();
+    }
+
+    void HeterogeneousModel::inspect_tensor(ComputeContext *ctx, ggml::tensor *tensor, ggml::type dtype, const char *format, ...)
+    {
+        tensor = ggml::cast(ctx, tensor, dtype);
+        if (!ggml::is_contiguous(tensor))
+        {
+            tensor = ggml::cont(ctx, tensor);
+            ggml::build_forward_expand(ctx, tensor);
+        }
+
+        va_list args;
+        va_start(args, format);
+        std::string tag = utils::sprintf(format, args);
+        va_end(args);
+
+        observed_set[tensor] = tag;
+
+        ctx->get_backend_context()->set_eval_observe_callback(model_need_observe_tensor_evaluation_callback, model_observe_tensor_evaluation_callback, this);
+    }
+
+    void HeterogeneousModel::attach_lens(ComputeContext *ctx, ggml::tensor *hidden_states, int layer_id)
+    {
+        if (nullptr == lens_callback) return;
+        if (layer_id > (int)lens_layers.size()) return;
+        if (nullptr == lens_layers[layer_id]) return;
+
+        const int qlen  = ggml::get_dim(hidden_states, 1);
+        const int batch = ggml::get_dim(hidden_states, 2);
+        const int last_n = 1;
+        CHATLLM_CHECK(batch == 1) << "batch processing not supported";
+
+        hidden_states = ggml::view_3d(ctx, hidden_states, hidden_size, last_n, batch,
+            ggml::row_size(hidden_states),
+            ggml::row_size(hidden_states) * qlen,
+            (qlen - last_n) * ggml::row_size(hidden_states));
+
+        hidden_states = lens_layers[layer_id]->forward(ctx, hidden_states);
+        hidden_states = final_layernorm->forward(ctx, hidden_states);
+
+        ggml::tensor *lm_logits = lm_head ? lm_head->forward(ctx, hidden_states)
+                                          : word_embeddings->forward(ctx, hidden_states);
+        if (logits_pp)
+            lm_logits = logits_pp->forward(ctx, lm_logits);
+
+        ggml::tensor *order = ggml::ordering(ctx, lm_logits, true);
+
+        if ((int)ggml::get_dim(order, 0) != n_vocab)
+        {
+            n_vocab = (int)ggml::get_dim(order, 0);
+            lens_tokens_logits.resize(n_vocab * num_hidden_layers);
+            lens_tokens_order.resize(n_vocab * num_hidden_layers);
+        }
+
+        ggml::set_output(order);
+        ggml::build_forward_expand(ctx, order);
+
+        inspect_tensor(ctx, lm_logits, ggml::type::GGML_TYPE_F32, "lens.logits.%d", layer_id);
+        inspect_tensor(ctx, order, ggml::type::GGML_TYPE_I32, "lens.order.%d", layer_id);
+    }
+
+    bool HeterogeneousModel::need_observe_tensor_evaluation(ggml::tensor *tensor)
+    {
+        return lens_callback && (observed_set.find(tensor) != observed_set.end());
+    }
+
+    bool HeterogeneousModel::observe_tensor_evaluation(ggml::tensor *tensor)
+    {
+        auto it = observed_set.find(tensor);
+        if (it == observed_set.end()) return true;
+
+        auto name = it->second;
+
+        if (name.starts_with("lens.logits."))
+        {
+            int layer_id = atoi(name.c_str() + 5 + 7);
+            Backend::read_tensor_data(tensor, lens_tokens_logits.data() + n_vocab * layer_id);
+            return true;
+        }
+
+        if (name.starts_with("lens.order."))
+        {
+            int layer_id = atoi(name.c_str() + 5 + 6);
+            Backend::read_tensor_data(tensor, lens_tokens_order.data() + n_vocab * layer_id);
+            lens_callback(lens_user_data, layer_id, n_vocab,
+                lens_tokens_logits.data() + n_vocab * layer_id,
+                lens_tokens_order.data()  + n_vocab * layer_id);
+            return true;
+        }
+
+        return true;
     }
 
     int64_t HeterogeneousModel::get_param_num_of_layers(bool effective_only) const
@@ -1896,16 +2052,30 @@ namespace chatllm
         BaseConfig config = loader.read_basic<BaseConfig>();
         std::ostringstream oss;
         auto model_type = (ModelType)(loader.model_type);
-        auto purpose = get_model_purpose(model_type);
-        oss << "Model name  : " << loader.model_name;
-        if (loader.model_native_name.size() > 0)
-            oss << " (" << loader.model_native_name << ")";
-        oss << " (" << std::hex << std::setw(8) << std::setfill('0') << model_type << ")" << std::dec;
-        oss << std::endl;
+        if (0xffffffff != model_type)
+        {
+            auto purpose = get_model_purpose(model_type);
+            oss << "Model name  : " << loader.model_name;
+            if (loader.model_native_name.size() > 0)
+                oss << " (" << loader.model_native_name << ")";
+            oss << " (" << std::hex << std::setw(8) << std::setfill('0') << model_type << ")" << std::dec;
+            oss << std::endl;
 
-        oss << "Model type  : " << to_string(purpose);
-        oss << " {" << format_access_points(get_chat_model_access_points(model_type)) << "}";
-        oss << std::endl;
+            oss << "Model type  : " << to_string(purpose);
+            oss << " {" << format_access_points(get_chat_model_access_points(model_type)) << "}";
+            oss << std::endl;
+        }
+        else
+        {
+            oss << "Model name  : " << loader.model_name;
+            if (loader.model_native_name.size() > 0)
+                oss << " (" << loader.model_native_name << ")";
+            oss << " (" << std::hex << std::setw(8) << std::setfill('0') << model_type << ")" << std::dec;
+            oss << std::endl;
+
+            oss << "Model type  : <special>";
+            oss << std::endl;
+        }
 
         oss << "File version: " << loader.version << " (" << ModelLoader::ff_to_str(loader.ff) << ")" << std::endl
             << "Quantization: " << ggml::type_to_str(config.dtype) << std::endl;
@@ -2004,7 +2174,7 @@ namespace chatllm
         return _loader->load_model(loader, result, args);
     }
 
-    static void load_tensors_only(ModelLoader &loader)
+    void load_tensors_only(ModelLoader &loader)
     {
         load_file_header(loader);
         if (ModelLoader::FileFormat::GGMM == loader.ff)

@@ -882,6 +882,32 @@ namespace chatllm
         return r;
     }
 
+    const char *BaseTokenizer::get_token_vocab(int *n_vocab, int *width)
+    {
+        if (vocab_for_c.size() < 1)
+        {
+            size_t max_len = 0;
+            for (int i = 0; i < this->vocab_size; i++)
+            {
+                auto s = tp->IdToPiece(i);
+                if (s.size() > max_len) max_len = s.size();
+            }
+            max_len += 1;
+            vocab_width = (int)max_len;
+            vocab_for_c.resize(max_len * vocab_size);
+            char *p = vocab_for_c.data();
+            for (int i = 0; i < this->vocab_size; i++, p += max_len)
+            {
+                auto s = tp->IdToPiece(i);
+                memcpy(p, s.data(), s.size());
+            }
+        }
+
+        *n_vocab = this->vocab_size;
+        *width   = this->vocab_width;
+        return vocab_for_c.data();
+    }
+
     void BaseHistoryEncoder::append_sys_prompt(std::vector<int> &ids) const
     {
     }

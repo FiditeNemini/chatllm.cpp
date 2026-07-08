@@ -255,6 +255,11 @@ namespace chatllm
         int eos_token_id;
         int pad_token_id;
         int sep_token_id;
+
+        BaseConfig()
+        {
+            memset(this, 0, sizeof(*this));
+        }
     };
 
     std::string trim(std::string str, const char *spaces = " \t");
@@ -333,6 +338,8 @@ namespace chatllm
 
         int get_image_total_emb_vectors(void);
 
+        virtual const char *get_token_vocab(int *n_vocab, int *width);
+
         int bos_token_id;
         int eos_token_id;
         int pad_token_id;
@@ -359,6 +366,8 @@ namespace chatllm
         BaseHistoryEncoder *qa_encoder;
         bool auto_add_bos;
         std::set<int> terminate_ids;
+        std::vector<char> vocab_for_c;
+        int vocab_width = -1;
     public:
         const int vocab_size;
     };
@@ -437,6 +446,12 @@ namespace chatllm
         InitContext(BackendContext *backend_context = nullptr) : ComputeContext(backend_context)
         {
             cache_dtype = ggml::type::GGML_TYPE_F16;
+        }
+
+        InitContext(const InitContext *ctx) : ComputeContext(ctx->backend_context)
+        {
+            cache_dtype = ctx->cache_dtype;
+            dtype = ctx->dtype;
         }
 
         struct ggml_context *get_ctx() override { return gctx.get(); }
@@ -962,6 +977,8 @@ namespace chatllm
     class AbstractModel
     {
     public:
+        typedef void (*f_lens_callback)(void *user_data, int layer_id, int n_tokens, const float *logits, const int *ordering);
+    public:
         virtual ~AbstractModel()
         {}
 
@@ -1010,6 +1027,7 @@ namespace chatllm
         virtual void set_names(const std::string &name, const std::string &native_name) = 0;
 
         virtual void load(ModelLoader &loader) = 0;
+        virtual void load_lens(ModelLoader *loader, const std::string &type, const std::vector<int> &layer_ids) = 0;
 
         virtual void set_tokenizer(BaseTokenizer *tokenizer) = 0;
 
@@ -1037,6 +1055,8 @@ namespace chatllm
         virtual LayerAllocatorManager *get_alloc_manager(void) = 0;
 
         virtual bool support_multi_turn(void) const { return false; }
+
+        virtual void set_lens_callback(f_lens_callback callback, void *user_data) = 0;
     };
 
     class ModelProxy : public AbstractModel
@@ -1130,6 +1150,10 @@ namespace chatllm
         void set_names(const std::string &name, const std::string &native_name) override { model->set_names(name, native_name); }
 
         void load(ModelLoader &loader) override { return model->load(loader); }
+        void load_lens(ModelLoader *loader, const std::string &type, const std::vector<int> &layer_ids) override
+        {
+            model->load_lens(loader, type, layer_ids);
+        }
 
         void set_tokenizer(BaseTokenizer *tokenizer) override { model->set_tokenizer(tokenizer); }
 
@@ -1157,6 +1181,10 @@ namespace chatllm
             return model->get_alloc_manager();
         }
 
+        void set_lens_callback(f_lens_callback callback, void *user_data) override
+        {
+            model->set_lens_callback(callback, user_data);
+        }
     protected:
         AbstractModel *model;
         void set_proxy_model(AbstractModel *model) { this->model = model; }
@@ -1335,6 +1363,9 @@ namespace chatllm
             std::string flash_attention;
             std::map<std::string, std::string> model_n_gpu_layers;
             std::map<std::string, std::string> additional;
+            std::string lens_type;
+            std::string lens_layers;
+            std::string lens_fn;
             extra_args(int max_length, const std::string &layer_spec, bool moe_on_cpu, int n_threads, int batch_size, const std::string &cache_type,
                 const std::string &re_quantize = "")
                 : max_length(max_length), max_proj_length(-1), layer_spec(layer_spec), moe_on_cpu(moe_on_cpu), n_threads(n_threads),

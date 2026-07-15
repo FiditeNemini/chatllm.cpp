@@ -9,6 +9,7 @@
 #include <vector>
 #include <random>
 #include <chrono>
+#include <cstring>
 #include "basics.h"
 #include "tokenizer.h"
 #include "vectorstore.h"

@@ -687,7 +687,7 @@ namespace chatllm
         }
 
         Embedding(InitContext *ctx, ggml::type dtype, int num_embeddings, int embedding_dim)
-            : Embedding(ctx, ctx->dtype, num_embeddings, embedding_dim, false) {}
+            : Embedding(ctx, dtype, num_embeddings, embedding_dim, false) {}
 
         Embedding(InitContext *ctx, int num_embeddings, int embedding_dim, int pos_max)
             : Embedding(ctx, num_embeddings, embedding_dim) {}

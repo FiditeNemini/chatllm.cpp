@@ -32,6 +32,39 @@ namespace chatllm::qwen::v3_5
         int layer_is_la[v3::MAX_LAYERS];
     };
 
+    class ChatHistoryEncoderOvisOCR : public v2_5_vl::ChatHistoryEncoder
+    {
+    public:
+        void append_content(const std::vector<ContentPiece> &pieces, std::vector<int> &ids) const override
+        {
+            std::vector<ContentPiece> _pieces;
+            bool found_text = false;
+
+            for (auto &piece : pieces)
+            {
+                if ((piece.type == ContentPiece::Type::Text) && (piece.content.size() > 0))
+                {
+                    _pieces.push_back(piece);
+                    found_text = true;
+                }
+                else if (piece.type == ContentPiece::Type::Image)
+                {
+                    _pieces.push_back(piece);
+                }
+                else;
+            }
+
+            if (!found_text)
+            {
+                _pieces.emplace_back("\nExtract all readable content from the image in natural human reading order and output the result as a single Markdown document. "
+                                   "For charts or images, represent them using an HTML image tag: <' + 'img src=\"images/bbox_{left}_{top}_{right}_{bottom}.jpg\" />, "
+                                   "where left, top, right, bottom are bounding box coordinates scaled to [0, 1000). Format formulas as LaTeX. Format tables as HTML: <table>...</table>. "
+                                   "Transcribe all other text as standard Markdown. Preserve the original text without translation or paraphrasing.");
+            }
+            v2_5_vl::ChatHistoryEncoder::append_content(_pieces, ids);
+        }
+    };
+
     typedef v3_vl::Tokenizer Tokenizer;
 
     class Prelude
@@ -626,6 +659,10 @@ namespace chatllm::qwen::v3_5
     {
         bool r = BaseModelForConditionalGeneration::load_more(config);
         vit_loaded = visual.load_more(this->config.dtype, this->config.hidden_size, config);
+        if (config["model_name"].ToString() == "OvisOCR2")
+        {
+            multi_turn = false;
+        }
         return r;
     }
 

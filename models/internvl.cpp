@@ -294,10 +294,10 @@ namespace chatllm::intern::vl
     class ChatHistoryEncoder : public qwen::v2_5_vl::ChatHistoryEncoder
     {
     public:
-        void append_content(const Content &user, std::vector<int> &ids) const override;
+        void append_content(const std::vector<ContentPiece> &pieces, std::vector<int> &ids) const override;
     protected:
-        void append_content_internvl(const Content &user, std::vector<int> &ids) const;
-        void append_content_qianfanvl(const Content &user, std::vector<int> &ids) const;
+        void append_content_internvl(const std::vector<ContentPiece> &pieces, std::vector<int> &ids) const;
+        void append_content_qianfanvl(const std::vector<ContentPiece> &pieces, std::vector<int> &ids) const;
         void append_image_piece(const ContentPiece &piece, std::vector<int> &ids) const;
     public:
         const vit::Config *vis_config = nullptr;
@@ -494,11 +494,11 @@ namespace chatllm::intern::vl
         Backend::write_tensor_data(emb->weight, buf.data(), offset, buf.size());
     }
 
-    void ChatHistoryEncoder::append_content_internvl(const Content &user, std::vector<int> &ids) const
+    void ChatHistoryEncoder::append_content_internvl(const std::vector<ContentPiece> &pieces, std::vector<int> &ids) const
     {
         Tokenizer *tok = dynamic_cast<Tokenizer *>(tokenizer);
 
-        for (auto &piece : user.pieces)
+        for (auto &piece : pieces)
         {
             if (piece.type == ContentPiece::Type::Text)
             {
@@ -515,13 +515,13 @@ namespace chatllm::intern::vl
         }
     }
 
-    void ChatHistoryEncoder::append_content_qianfanvl(const Content &user, std::vector<int> &ids) const
+    void ChatHistoryEncoder::append_content_qianfanvl(const std::vector<ContentPiece> &pieces, std::vector<int> &ids) const
     {
         Tokenizer *tok = dynamic_cast<Tokenizer *>(tokenizer);
 
         std::string question;
 
-        for (auto &piece : user.pieces)
+        for (auto &piece : pieces)
         {
             if (piece.type == ContentPiece::Type::Text)
             {
@@ -581,12 +581,12 @@ namespace chatllm::intern::vl
         }
     }
 
-    void ChatHistoryEncoder::append_content(const Content &user, std::vector<int> &ids) const
+    void ChatHistoryEncoder::append_content(const std::vector<ContentPiece> &pieces, std::vector<int> &ids) const
     {
         if (template_name == "qianfanvl")
-            append_content_qianfanvl(user, ids);
+            append_content_qianfanvl(pieces, ids);
         else
-            append_content_internvl(user, ids);
+            append_content_internvl(pieces, ids);
     }
 }
 

@@ -1802,13 +1802,13 @@ namespace chatllm::qwen::v2_5_vl
         return append_image_piece(ids, w, h, pixels, pixels2);
     }
 
-    void ChatHistoryEncoder::append_content(const Content &user, std::vector<int> &ids) const
+    void ChatHistoryEncoder::append_content(const std::vector<ContentPiece> &pieces, std::vector<int> &ids) const
     {
         Tokenizer *tok = dynamic_cast<Tokenizer *>(tokenizer);
 
         std::unique_ptr<vision::Resize> resize;
 
-        for (auto &piece : user.pieces)
+        for (auto &piece : pieces)
         {
             if (piece.type == ContentPiece::Type::Text)
             {
@@ -1867,7 +1867,7 @@ namespace chatllm::qwen::v2_5_vl
         tok->media_emb.clear();
         tok->images_grid.clear();
 
-        append_content(user, ids);
+        append_content(user.pieces, ids);
 
         ids.push_back(tok->im_end_token_id);
         ids.push_back(tok->nl_token_id);

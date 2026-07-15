@@ -494,6 +494,9 @@ Please use `--format completion` for these models.
 * Nanonets-OCR2 (`Qwen2VLForConditionalGeneration`, `Qwen2_5_VLForConditionalGeneration`)
     * [x] OCR2: [3B](https://huggingface.co/nanonets/Nanonets-OCR2-3B/tree/d0368059ad151ce9e38f526890cfd4f27b28be65), [1.5B](https://huggingface.co/nanonets/Nanonets-OCR2-1.5B-exp/tree/306a9b2a65672a3dbebd9bce9a9373a9a18674a2)
 
+* OvisOCR2 (`Qwen3_5ForConditionalGeneration`)
+    * [x] [OCR2](https://huggingface.co/ATH-MaaS/OvisOCR2/tree/77bfe9462d1e6f8965ee6698f08ea8ede580912c) (`--name OvisOCR2`)
+
 * PaddleOCR-VL (`PaddleOCRVLForConditionalGeneration`)
     * [x] [v1.6](https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6/tree/66317acc4c9fc17bd154591ce650735cd2855f3e)
 

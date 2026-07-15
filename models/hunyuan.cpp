@@ -1879,7 +1879,7 @@ namespace chatllm::hunyuan::penguin::vl
     class ChatHistoryEncoder : public qwen::v2_5_vl::ChatHistoryEncoder
     {
     public:
-        void append_content(const Content &user, std::vector<int> &ids) const override;
+        void append_content(const std::vector<ContentPiece> &pieces, std::vector<int> &ids) const override;
     public:
         const vit::Config *vis_config = nullptr;
     };
@@ -2050,11 +2050,11 @@ namespace chatllm::hunyuan::penguin::vl
         Backend::write_tensor_data(emb->weight, buf.data(), offset, buf.size());
     }
 
-    void ChatHistoryEncoder::append_content(const Content &user, std::vector<int> &ids) const
+    void ChatHistoryEncoder::append_content(const std::vector<ContentPiece> &pieces, std::vector<int> &ids) const
     {
         Tokenizer *tok = dynamic_cast<Tokenizer *>(tokenizer);
 
-        for (auto &piece : user.pieces)
+        for (auto &piece : pieces)
         {
             switch (piece.type)
             {

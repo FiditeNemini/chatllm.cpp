@@ -317,7 +317,6 @@ namespace chatllm
 
         if (args.lens_type.size() > 0)
         {
-            ModelLoader *l = nullptr;
             std::vector<int> lens_layers_ids;
             utils::parse_int_lists(lens_layers_ids, args.lens_layers, config.num_hidden_layers);
 

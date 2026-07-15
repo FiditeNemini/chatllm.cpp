@@ -661,7 +661,7 @@ namespace chatllm::qwen
         {
         public:
             void append_user(int round_idx, const Content &user, std::vector<int> &ids) const override;
-            virtual void append_content(const Content &user, std::vector<int> &ids) const;
+            virtual void append_content(const std::vector<ContentPiece> &pieces, std::vector<int> &ids) const;
         protected:
             bool append_image_piece(std::vector<int> &ids, const int w, const int h, const std::vector<uint8_t> &pixels, const std::vector<uint8_t> &pixels2) const;
             bool append_image_piece(const char *fn1, const char *fn2, std::vector<int> &ids) const;

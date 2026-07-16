@@ -21,20 +21,24 @@ ggml --> chatllm.cpp
 chatllm.cpp --> AlphaGeometryRE
 chatllm.cpp --> WritingTools
 chatllm.cpp --> LittleAcademia
+chatllm.cpp --> LLMirror
 subgraph coding[ ]
     AlphaGeometryRE
     WritingTools
     LittleAcademia
+    LLMirror
 end
 ggml[<a href="https://github.com/ggml-org/ggml"                     style="text-decoration:none;">ggml</a>            <br><span style="font-size:10px;">Machine learning library</span>];
 chatllm.cpp[<a href="https://github.com/foldl/chatllm.cpp"          style="text-decoration:none;">chatllm.cpp</a>     <br><span style="font-size:10px;">LLM inference</span>];
 AlphaGeometryRE[<a href="https://github.com/foldl/alphageometryre"  style="text-decoration:none;">AlphaGeometryRE</a> <br><span style="font-size:10px;">AlphaGeometry Re-engineered</span>];
 WritingTools[<a href="https://github.com/foldl/WritingTools"        style="text-decoration:none;">Writing Tools</a>   <br><span style="font-size:10px;">AI aided writing</span>];
 LittleAcademia[<a href="https://github.com/foldl/little-academia"   style="text-decoration:none;">Little Academia</a> <br><span style="font-size:10px;">Learn programming</span>];
+LLMirror[<a href="https://github.com/foldl/llmirror"   style="text-decoration:none;">LL·Mirror</a> <br><span style="font-size:10px;">LLM introspection</span>];
 ```
 
 **What's New:**
 
+* 2026-07-16: [Introspection with lens](./docs/lens.md)
 * 2026-07-15: OvisOCR2
 * 2026-06-27: PaddleOCR-VL
 * 2026-06-22: Mellum-2
@@ -46,19 +50,6 @@ LittleAcademia[<a href="https://github.com/foldl/little-academia"   style="text-
 * 2026-03-22: Penguin-VL
 * 2026-03-06: Qwen3.5
 * 2026-03-03: GLM-OCR
-* 2026-02-22: Youtu-VL
-* 2026-02-18: Youtu-LLM
-* 2026-02-16: Voice Clone with Qwen3-TTS
-* 2026-02-12: Qwen3-TTS
-* 2026-02-01: Qwen3-ForceAligner
-* 2026-01-31: Qwen3-ASR
-* 2026-01-21: Step3-VL
-* 2026-01-20: GLM-4.7-Flash
-* 2026-01-19: TranslateGemma
-* 2026-01-13: WeDLM
-* 2026-01-09: QWen3-VL-Embedding/Reranker
-* 2026-01-05: HY-MT
-* 2026-01-04: GLM-ASR-Nano
 * 2025-10-10: [I can draw](./docs/multimodal.md): Janus-Pro
 * 2025-06-21: [I can hear](./docs/multimodal.md): Qwen2-Audio
 * 2025-05-23: [I can see](./docs/multimodal.md): Fuyu

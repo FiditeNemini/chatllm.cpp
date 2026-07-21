@@ -377,6 +377,11 @@ namespace chatllm
         });
     }
 
+    uint16_t ggml::fp32_to_fp16(float value)
+    {
+        return ggml_fp32_to_fp16(value);
+    }
+
     ggml::tensor * ggml::fill(ComputeContext *ctx, ggml::tensor *a, float value)
     {
         ggml::tensor *tensor = ggml_fill(ctx->get_ctx(), a, value);
@@ -2511,9 +2516,14 @@ namespace chatllm
         }
         else
         {
-            ggml::tensor * attn_masked = causal ? ggml::diag_mask_inf(ctx, attn_scores, n_past)
-                                                  : attn_scores;
-            attn_probs = ggml::soft_max(ctx, attn_masked);
+            if (nullptr == rt_mask)
+            {
+                ggml::tensor * attn_masked = causal ? ggml::diag_mask_inf(ctx, attn_scores, n_past)
+                                                    : attn_scores;
+                attn_probs = ggml::soft_max(ctx, attn_masked);
+            }
+            else
+                attn_probs = ggml::soft_max_ext(ctx, attn_scores, rt_mask, 1.0f, 0.0f);
         }
 
         ggml::soft_max_attach_sinks(attn_probs, sinks);

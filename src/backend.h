@@ -48,6 +48,8 @@ namespace chatllm
         void from_float(ggml::type type, const float *src, void  *dst, int64_t ne0, int64_t n_rows);
         void to_float  (ggml::type type, const void  *src, float *dst, int64_t ne0, int64_t n_rows);
 
+        uint16_t fp32_to_fp16(float value);
+
         type type_of(const ggml::tensor *tensor);
         type type_of(const ggml::tensor &a);
         std::string type_to_str(type t);

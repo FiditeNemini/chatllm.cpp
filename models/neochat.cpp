@@ -421,6 +421,10 @@ namespace chatllm::neochat
         int img_context_token_id;
         int img_start_token_id;
         int img_end_token_id;
+
+        int res_width = 256;
+        int res_height = 256;
+        int num_steps = 2;
     public:
         bool think_mode = false;
         GenMode gen_mode = GenMode::VQA;
@@ -511,6 +515,8 @@ namespace chatllm::neochat
         ggml::tensor *forward(ComputeContext *ctx, ggml::tensor *hidden_states, ggml::tensor *image_gen_id_pos, ggml::tensor *non_image_id_pos,
             int n_past);
 
+        void before_eval(ComputeContext *ctx) override;
+
         void load(const std::string &path, TensorLoader *loader) override
         {
             BaseAttention::load(path, loader);
@@ -571,10 +577,20 @@ namespace chatllm::neochat
         ggml::tensor *rt_indexes_t = nullptr; // fill this before evaluation
         ggml::tensor *rt_indexes_h = nullptr;
         ggml::tensor *rt_indexes_w = nullptr;
+
+        const uint16_t *p_mask_f16 = nullptr;
     protected:
         bool update_cache = true;
         bool use_cache = true;
     };
+
+    void BaseNeoAttention::before_eval(ComputeContext *ctx)
+    {
+        //return;
+        CHATLLM_CHECK(ggml::type_of(rt_mask) == ggml::type::GGML_TYPE_F16);
+
+        Backend::write_tensor_data(rt_mask, p_mask_f16);
+    }
 
     ggml::tensor * BaseNeoAttention::split_norm_rope(ComputeContext *ctx, ggml::tensor *states,
             Block *norm_t, Block *norm_t_mot_gen, Block *norm_hw, Block *norm_hw_mot_gen,
@@ -774,11 +790,14 @@ namespace chatllm::neochat
         const bool has_image_gen = ggml::nelements(image_gen_id_pos) > 0;
         const bool has_non_image = ggml::nelements(non_image_id_pos) > 0;
 
+        CHATLLM_CHECK(batch == 1) << "is this possible to be supported?";
+
         RoPESelfAttention<BaseAttention>::before_forward(ctx, n_past, qlen);
 
         rt_indexes_t = ggml::new_tensor_2d(ctx, ggml::type::GGML_TYPE_I32, qlen, batch);
         rt_indexes_h = ggml::new_tensor_2d(ctx, ggml::type::GGML_TYPE_I32, qlen, batch);
         rt_indexes_w = ggml::new_tensor_2d(ctx, ggml::type::GGML_TYPE_I32, qlen, batch);
+        rt_mask      = ggml::new_tensor_3d(ctx, ggml::type::GGML_TYPE_F16, n_past + qlen, qlen, batch);
 
         if (has_image_gen && !has_non_image)
         {
@@ -874,6 +893,7 @@ namespace chatllm::neochat
         else;
 
         hidden_states = ggml::add(ctx, hidden_states, residual);
+        //inspect_tensor(hidden_states, "layer[%].output", id);
 
         return hidden_states;
     }
@@ -884,6 +904,11 @@ namespace chatllm::neochat
         typedef LMBlock1<RMSNorm, BaseNeoAttention, RMSNorm, MLPBlock> Base;
     public:
         using LMBlock1<RMSNorm, BaseNeoAttention, RMSNorm, MLPBlock>::LMBlock1;
+
+        void before_eval(ComputeContext *ctx) override
+        {
+            Base::attention.before_eval(ctx);
+        }
 
         ggml::tensor *forward(ComputeContext *ctx, ggml::tensor *hidden_states, ggml::tensor *image_gen_id_pos, ggml::tensor *non_image_id_pos,
             int n_past)
@@ -962,6 +987,9 @@ namespace chatllm::neochat
         void before_eval_model(ComputeContext *ctx) override;
         void before_generate_next_token(const std::vector<int> &input_ids, const GenerationConfig &gen_config);
         void before_generate(const GenerationConfig &gen_config) override;
+        void before_run_model(const int *input_ids, const int ids_count,
+                               const GenerationConfig &gen_config,
+                               int past) override;
         bool run_model(const int *input_ids, const int ids_count,
                             const GenerationConfig &gen_config,
                             int past,
@@ -969,6 +997,14 @@ namespace chatllm::neochat
                             std::function<ggml::tensor *(ComputeContext *, ggml::tensor *)> func_epilog) override;
 
         void vqa_gen(const GenerationConfig &gen_config, const int gen_max_tokens,
+                                const bool continuous,
+                                bool &completed,
+                                ModelPerfInfo *performance,
+                                BaseStreamer *streamer,
+                                std::vector<int> &output_ids,
+                                std::vector<int> &cur_input_ids,
+                                Sampler *sampler);
+        void t2i_gen(const GenerationConfig &gen_config, const int gen_max_tokens,
                                 const bool continuous,
                                 bool &completed,
                                 ModelPerfInfo *performance,
@@ -984,6 +1020,7 @@ namespace chatllm::neochat
         vit::VisualEmbeddingGeneration visual;
         std::vector<qwen::v2_5_vl::ImageGridSize> images_grid;
         std::vector<int> v_pos;
+        std::vector<uint16_t> v_mask_f16;
         int token_time = 0;
         int parallel_size = 1;
     };
@@ -1284,6 +1321,100 @@ namespace chatllm::neochat
         }
     }
 
+    void ConditionalGeneration::t2i_gen(const GenerationConfig &gen_config,
+                                const int gen_max_tokens,
+                                const bool continuous,
+                                bool &completed,
+                                ModelPerfInfo *performance,
+                                BaseStreamer *streamer,
+                                std::vector<int> &output_ids,
+                                std::vector<int> &curr_input_ids,
+                                Sampler *sampler)
+    {
+        n_past = 0;
+        n_past_offset = 0;
+
+        bool first_call = true;
+        int next_output_idx = 0;
+
+        while (!aborted && !completed && (n_past + (int)curr_input_ids.size() < gen_config.max_length))
+        {
+            std::vector<float> lm_logits;
+            const int last_n_past = n_past;
+            if (!generate_next_token(curr_input_ids, gen_config, lm_logits))
+            {
+                ggml::log(GGML_LOG_LEVEL_ERROR, "Out of memory");
+                aborted = true;
+                break;
+            }
+
+            if (lm_logits.size() == 0)
+            {
+                int num = n_past > last_n_past ? n_past - last_n_past : 0;
+                performance->Accumulate(ModelPerfInfo::Type::Generation, num);
+                completed = true;
+                break;
+            }
+
+            if (first_call)
+            {
+                if (performance)
+                    performance->Accumulate(ModelPerfInfo::Type::Prompt, curr_input_ids.size());
+                first_call = false;
+            }
+
+
+            n_past += (int)curr_input_ids.size();
+            curr_input_ids.clear();
+
+            float *logits = lm_logits.data();
+            const size_t tok_num = lm_logits.size() / config_.vocab_size;
+
+            for (size_t tok_idx = 0; (tok_idx < tok_num) && !aborted; tok_idx++, logits +=  config_.vocab_size)
+            {
+                int next_token_id = sampler->sampling(logits,  config_.vocab_size);
+
+//printf("\n>>next = %d<<\n", next_token_id);
+//fflush(stdout);
+//exit(-1);
+
+                if (next_token_id == Sampler::ABORT)
+                {
+                    aborted = true;
+                    break;
+                }
+
+                curr_input_ids.push_back(next_token_id);
+
+                int pop_output = 0;
+                int keep_idx = 0;
+                output_ids.push_back(next_token_id);
+
+                if (is_output_terminated(output_ids, keep_idx, pop_output))
+                {
+                    while (pop_output-- > 0)
+                        output_ids.pop_back();
+                    keep_idx = (int)output_ids.size();
+                    completed = true;
+                }
+
+                if (streamer)
+                {
+                    if (keep_idx > (int)output_ids.size())
+                        keep_idx = (int)output_ids.size();
+                    for (; next_output_idx < keep_idx; next_output_idx++)
+                        streamer->put({output_ids[next_output_idx]});
+                }
+
+                if ((gen_max_tokens > 0) && ((n_past + (int)curr_input_ids.size() >= gen_max_tokens)))
+                {
+                    aborted = true;
+                    break;
+                }
+            }
+        }
+    }
+
     std::vector<int> ConditionalGeneration::generate(const std::vector<int> &input_ids, const GenerationConfig &gen_config,
                                 const bool continuous,
                                 bool &completed,
@@ -1328,7 +1459,9 @@ namespace chatllm::neochat
         case Tokenizer::GenMode::VQA:
             vqa_gen(gen_config, gen_max_tokens, continuous, completed, performance, streamer, output_ids, curr_input_ids, sampler.get());
             break;
-
+        case Tokenizer::GenMode::ImageGeneration:
+            t2i_gen(gen_config, gen_max_tokens, continuous, completed, performance, streamer, output_ids, curr_input_ids, sampler.get());
+            break;
         default:
             aborted = true;
             break;
@@ -1371,6 +1504,47 @@ namespace chatllm::neochat
 
         size_t offset = emb->get_base_nbytes();
         Backend::write_tensor_data(emb->weight, buf.data(), offset, buf.size());
+    }
+
+    void ConditionalGeneration::before_run_model(const int *input_ids, const int ids_count,
+                               const GenerationConfig &gen_config,
+                               int past)
+    {
+        BaseModelForConditionalGeneration::before_run_model(input_ids, ids_count, gen_config, past);
+
+        if (nullptr == input_ids) return;
+
+        const int image_id_start = config.vocab_size;
+
+        const int64_t qlen = ids_count;
+        const int64_t n_kv = n_past + qlen;
+
+        v_mask_f16.clear();
+        v_mask_f16.resize(n_kv * qlen);
+
+        const uint16_t _inf = ggml::fp32_to_fp16(- INFINITY);
+
+        for (int64_t j = 0; j < qlen; j++)
+        {
+            bool in_image = input_ids[j] >= image_id_start;
+            for (int64_t i = 1 + j + n_past; i < n_kv; i++)
+            {
+                if (input_ids[i - n_past] < image_id_start)
+                    in_image = false;
+
+                if (in_image)
+                {
+                    ; // non-causual
+                }
+                else
+                {
+                    v_mask_f16[n_kv * j + i] = _inf;
+                }
+            }
+        }
+
+        for (auto p : layer_attentions)
+            p->p_mask_f16 = v_mask_f16.data();
     }
 
     bool ConditionalGeneration::run_model(const int *input_ids, const int ids_count,
@@ -1479,6 +1653,7 @@ namespace chatllm::neochat
                 break;
             }
         }
+        if (s.size() < 1) return;
         tok->encode("system", ids, true, false, true);
         tok->encode(s, ids, false, true, true);
     }
@@ -1542,6 +1717,7 @@ namespace chatllm::neochat
             if (!first_text || (piece.type != ContentPiece::Type::Text))
             {
                 pieces.push_back(piece);
+                continue;
             }
 
             first_text = false;
